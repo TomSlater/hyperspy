@@ -1,38 +1,37 @@
 # -*- coding: utf-8 -*-
-# Copyright 2007-2021 The HyperSpy developers
+# Copyright 2007-2024 The HyperSpy developers
 #
-# This file is part of  HyperSpy.
+# This file is part of HyperSpy.
 #
-#  HyperSpy is free software: you can redistribute it and/or modify
+# HyperSpy is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-#  HyperSpy is distributed in the hope that it will be useful,
+# HyperSpy is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with  HyperSpy.  If not, see <http://www.gnu.org/licenses/>.
+# along with HyperSpy. If not, see <https://www.gnu.org/licenses/#GPL>.
 
 
 from __future__ import division
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
 from hyperspy.drawing.figure import BlittedFigure
 
 
 class HistogramTilePlot(BlittedFigure):
-
     def __init__(self):
         self.figure = None
-        self.title = ''
+        self.title = ""
         self.ax = None
 
-    def create_axis(self, ncols=1, nrows=1, number=1, title=''):
+    def create_axis(self, ncols=1, nrows=1, number=1, title=""):
         ax = self.figure.add_subplot(ncols, nrows, number)
         ax.set_title(title)
         ax.hspy_fig = self
@@ -61,7 +60,7 @@ class HistogramTilePlot(BlittedFigure):
                 j += 1
                 mask = hist > 0
                 if np.any(mask):
-                    title = c_n + ' ' + p_n
+                    title = c_n + " " + p_n
                     ax = self.create_axis(ncomps, ncols, istart + j, title)
                     self.ax = ax
                     # remove previous
@@ -69,15 +68,14 @@ class HistogramTilePlot(BlittedFigure):
                         ax.patches[0].remove()
                     # set new; only draw non-zero height bars
                     ax.bar(
-                        bin_edges[
-                            :-1][mask],
+                        bin_edges[:-1][mask],
                         hist[mask],
                         np.diff(bin_edges)[mask],
                         # animated=True,
-                        **kwargs)
+                        **kwargs,
+                    )
                     width = bin_edges[-1] - bin_edges[0]
-                    ax.set_xlim(
-                        bin_edges[0] - width * 0.1, bin_edges[-1] + width * 0.1)
+                    ax.set_xlim(bin_edges[0] - width * 0.1, bin_edges[-1] + width * 0.1)
                     ax.set_ylim(0, np.max(hist) * 1.1)
                     # ax.set_title(c_n + ' ' + p_n)
         self.figure.canvas.draw_idle()

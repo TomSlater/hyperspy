@@ -1,30 +1,32 @@
 # -*- coding: utf-8 -*-
-# Copyright 2007-2021 The HyperSpy developers
+# Copyright 2007-2024 The HyperSpy developers
 #
-# This file is part of  HyperSpy.
+# This file is part of HyperSpy.
 #
-#  HyperSpy is free software: you can redistribute it and/or modify
+# HyperSpy is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-#  HyperSpy is distributed in the hope that it will be useful,
+# HyperSpy is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with  HyperSpy.  If not, see <http://www.gnu.org/licenses/>.
+# along with HyperSpy. If not, see <https://www.gnu.org/licenses/#GPL>.
 
 import logging
 
 import numpy as np
 import pytest
+import scipy
+from packaging.version import Version
 from scipy.optimize import OptimizeResult
 
 import hyperspy.api as hs
+from hyperspy.axes import GeneratorLen
 from hyperspy.decorators import lazifyTestClass
-from hyperspy.exceptions import VisibleDeprecationWarning
 
 TOL = 1e-5
 
@@ -47,8 +49,7 @@ def _create_toy_1d_gaussian_model(binned=True, weights=False, noise=False):
         Model1D for fitting
 
     """
-    np.random.seed(1)
-    v = 2.0 * np.exp(-((np.arange(10, 100, 0.1) - 50) ** 2) / (2 * 5.0 ** 2))
+    v = 2.0 * np.exp(-((np.arange(10, 100, 0.1) - 50) ** 2) / (2 * 5.0**2))
     s = hs.signals.Signal1D(v)
     s.axes_manager[0].scale = 0.1
     s.axes_manager[0].offset = 10
@@ -59,7 +60,7 @@ def _create_toy_1d_gaussian_model(binned=True, weights=False, noise=False):
         s.set_noise_variance(s_var)
 
     if noise:
-        s.add_poissonian_noise()
+        s.add_poissonian_noise(random_state=1)
 
     g = hs.model.components1D.Gaussian()
     g.centre.value = 56.0
@@ -98,12 +99,27 @@ class TestModelFitBinnedLeastSquares:
         assert len(self.m.p_std) == 3
         assert np.all(~np.isnan(self.m.p_std))
 
+    @pytest.mark.parametrize("bounded", (True, None))
     @pytest.mark.parametrize(
         "grad, expected",
         [("fd", (250.66282746, 50.0, 5.0)), ("analytical", (250.66282746, 50.0, 5.0))],
     )
-    def test_fit_trf(self, grad, expected):
-        self.m.fit(optimizer="trf", grad=grad)
+    def test_fit_trf(self, grad, expected, bounded):
+        self.m.fit(optimizer="trf", grad=grad, bounded=bounded)
+        self._check_model_values(self.m[0], expected, rtol=TOL)
+
+        assert isinstance(self.m.fit_output, OptimizeResult)
+        assert self.m.p_std is not None
+        assert len(self.m.p_std) == 3
+        assert np.all(~np.isnan(self.m.p_std))
+
+    @pytest.mark.parametrize("bounded", (True, None))
+    @pytest.mark.parametrize(
+        "grad, expected",
+        [("fd", (250.66282746, 50.0, 5.0)), ("analytical", (250.66282746, 50.0, 5.0))],
+    )
+    def test_fit_dogbox(self, grad, expected, bounded):
+        self.m.fit(optimizer="dogbox", grad=grad, bounded=bounded)
         self._check_model_values(self.m[0], expected, rtol=TOL)
 
         assert isinstance(self.m.fit_output, OptimizeResult)
@@ -143,12 +159,9 @@ class TestModelFitBinnedLeastSquares:
         self.m[0].sigma.bmin = 3.5
         self.m[0].sigma.bmax = 4.9
 
-        with pytest.warns(
-            VisibleDeprecationWarning, match="`ext_bounding=True` has been deprecated",
-        ):
-            self.m.fit(optimizer="lm", ext_bounding=True)
+        self.m.fit(optimizer="lm", bounded=True)
 
-        expected = (200.0, 51.0, 4.9)
+        expected = (245.6, 51.0, 4.9)
         self._check_model_values(self.m[0], expected, rtol=TOL)
 
 
@@ -211,7 +224,10 @@ class TestModelFitBinnedScipyMinimize:
     )
     def test_fit_huber_delta(self, grad, delta, expected):
         self.m.fit(
-            optimizer="L-BFGS-B", loss_function="huber", grad=grad, huber_delta=delta,
+            optimizer="L-BFGS-B",
+            loss_function="huber",
+            grad=grad,
+            huber_delta=delta,
         )
         print(self.m.p0)
         self._check_model_values(self.m[0], expected, rtol=TOL)
@@ -240,6 +256,28 @@ class TestModelFitBinnedScipyMinimize:
         assert "Maximum number of iterations has been exceeded" in caplog.text
         assert not self.m.fit_output.success
         assert self.m.fit_output.nit == 1
+
+
+def test_bounds_as_tuple():
+    m = _create_toy_1d_gaussian_model()
+    m[0].A.bmin = 200.0
+    m[0].A.bmax = 300.0
+    m[0].centre.bmin = 40.0
+    m[0].centre.bmax = 60.0
+    m[0].sigma.bmin = 4.5
+    m[0].sigma.bmax = 5.5
+    m._set_boundaries()
+
+    assert m._bounds_as_tuple(transpose=False) == (
+        (200.0, 300.0),
+        (40.0, 60.0),
+        (4.5, 5.5),
+    )
+
+    assert m._bounds_as_tuple(transpose=True) == (
+        (200.0, 40.0, 4.5),
+        (300.0, 60.0, 5.5),
+    )
 
 
 class TestModelFitBinnedGlobal:
@@ -285,6 +323,11 @@ class TestModelFitBinnedGlobal:
         self._check_model_values(self.m[0], expected, rtol=TOL)
         assert isinstance(self.m.fit_output, OptimizeResult)
 
+    # See https://github.com/scipy/scipy/issues/14589
+    @pytest.mark.xfail(
+        Version(scipy.__version__) < Version("1.9.3"),
+        reason="Regression fixed in scipy 1.9.3.",
+    )
     def test_fit_shgo(self):
         pytest.importorskip("scipy", minversion="1.2.0")
         self.m.fit(optimizer="SHGO", loss_function="ls", bounded=True)
@@ -307,25 +350,31 @@ class TestModelWeighted:
     def test_chisq(self, grad):
         self.m.signal.axes_manager[-1].is_binned = True
         self.m.fit(grad=grad)
-        np.testing.assert_allclose(self.m.chisq.data, 18.81652763)
+        np.testing.assert_allclose(self.m.chisq.data, 18.998027)
 
     @pytest.mark.parametrize("grad", ["fd", "analytical"])
     def test_red_chisq(self, grad):
         self.m.fit(grad=grad)
-        np.testing.assert_allclose(self.m.red_chisq.data, 0.02100059)
+        np.testing.assert_allclose(self.m.red_chisq.data, 0.021203, rtol=TOL)
 
     @pytest.mark.parametrize(
-        "optimizer, binned, expected",
+        "optimizer, binned, non_uniform_axis, expected",
         [
-            ("lm", True, (256.7752411, 49.9770694, 5.3008397)),
-            ("odr", True, (256.7752604, 49.9770693, 5.3008397)),
-            ("lm", False, (25.6775426, 49.9770509, 5.3008481)),
-            ("odr", False, (25.6775411, 49.9770507, 5.3008476)),
+            ("lm", True, True, (267.851451, 50.284446, 5.220067)),
+            ("lm", True, False, (267.851451, 50.284446, 5.220067)),
+            ("odr", True, False, (267.851451, 50.284446, 5.220067)),
+            ("lm", False, False, (26.785102, 50.284446, 5.220067)),
+            ("odr", False, False, (26.785102, 50.284446, 5.220067)),
         ],
     )
-    def test_fit(self, optimizer, binned, expected):
-        self.m.signal.axes_manager[-1].is_binned = binned
-        self.m.fit(optimizer=optimizer)
+    def test_fit(self, non_uniform_axis, optimizer, binned, expected):
+        axis = self.m.signal.axes_manager[-1]
+        axis.is_binned = binned
+        if non_uniform_axis:
+            axis.convert_to_non_uniform_axis()
+
+        # Use analytical gradient to check for non-uniform axis and binned
+        self.m.fit(optimizer=optimizer, grad="analytical")
         self._check_model_values(self.m[0], expected, rtol=TOL)
 
 
@@ -335,36 +384,33 @@ class TestModelScalarVariance:
         self.m = self.s.create_model()
         self.m.append(hs.model.components1D.Offset())
 
-    @pytest.mark.parametrize("std, expected", [(1, 78.35015229), (10, 78.35015229)])
+    @pytest.mark.parametrize("std, expected", [(1, 72.514887), (10, 72.514887)])
     def test_std1_chisq(self, std, expected):
-        np.random.seed(1)
-        self.s.add_gaussian_noise(std)
-        self.s.set_noise_variance(std ** 2)
+        self.s.add_gaussian_noise(std, random_state=1)
+        self.s.set_noise_variance(std**2)
         self.m.fit()
         np.testing.assert_allclose(self.m.chisq.data, expected)
 
-    @pytest.mark.parametrize("std, expected", [(1, 0.79949135), (10, 0.79949135)])
+    @pytest.mark.parametrize("std, expected", [(1, 0.7399478), (10, 0.7399478)])
     def test_std1_red_chisq(self, std, expected):
-        np.random.seed(1)
-        self.s.add_gaussian_noise(std)
-        self.s.set_noise_variance(std ** 2)
+        self.s.add_gaussian_noise(std, random_state=1)
+        self.s.set_noise_variance(std**2)
         self.m.fit()
         np.testing.assert_allclose(self.m.red_chisq.data, expected)
 
-    @pytest.mark.parametrize("std, expected", [(1, 0.84233497), (10, 0.84233497)])
+    @pytest.mark.parametrize("std, expected", [(1, 0.876451), (10, 0.876451)])
     def test_std1_red_chisq_in_range(self, std, expected):
         self.m.set_signal_range(10, 50)
-        np.random.seed(1)
-        self.s.add_gaussian_noise(std)
-        self.s.set_noise_variance(std ** 2)
+        self.s.add_gaussian_noise(std, random_state=1)
+        self.s.set_noise_variance(std**2)
         self.m.fit()
         np.testing.assert_allclose(self.m.red_chisq.data, expected)
 
 
 class TestFitPrintReturnInfo:
     def setup_method(self, method):
-        np.random.seed(1)
-        s = hs.signals.Signal1D(np.random.normal(scale=2, size=10000)).get_histogram()
+        rng = np.random.default_rng(1)
+        s = hs.signals.Signal1D(rng.normal(scale=2, size=10000)).get_histogram()
         s.axes_manager[-1].is_binned = True
         g = hs.model.components1D.Gaussian()
         self.m = s.create_model()
@@ -408,8 +454,8 @@ class TestFitPrintReturnInfo:
 
 class TestFitErrorsAndWarnings:
     def setup_method(self, method):
-        np.random.seed(1)
-        s = hs.signals.Signal1D(np.random.normal(scale=2, size=10000)).get_histogram()
+        rng = np.random.default_rng(1)
+        s = hs.signals.Signal1D(rng.normal(scale=2, size=10000)).get_histogram()
         s.axes_manager[-1].is_binned = True
         g = hs.model.components1D.Gaussian()
         m = s.create_model()
@@ -418,21 +464,6 @@ class TestFitErrorsAndWarnings:
         g.centre.value = 0.5
         g.A.value = 1000
         self.m = m
-
-    @pytest.mark.parametrize("optimizer", ["fmin", "mpfit", "leastsq"])
-    def test_deprecated_optimizers(self, optimizer):
-        with pytest.warns(
-            VisibleDeprecationWarning,
-            match=r".* has been deprecated and will be removed",
-        ):
-            self.m.fit(optimizer=optimizer)
-
-    def test_deprecated_fitter(self):
-        with pytest.warns(
-            VisibleDeprecationWarning,
-            match=r"fitter=.* has been deprecated and will be removed",
-        ):
-            self.m.fit(fitter="lm")
 
     def test_wrong_loss_function(self):
         with pytest.raises(ValueError, match="loss_function must be one of"):
@@ -474,7 +505,7 @@ class TestCustomOptimization:
         self.m.append(hs.model.components1D.Gaussian())
 
         def sets_second_parameter_to_two(model, parameters, data, weights=None):
-            return np.abs(parameters[1] - 2)
+            return abs(parameters[1] - 2)
 
         self.fmin = sets_second_parameter_to_two
 
@@ -512,14 +543,12 @@ class TestMultifit:
         m[0].A.value = 100
 
     def test_fetch_only_fixed_false(self):
-        # HyperSpy 2.0: remove setting iterpath='serpentine'
-        self.m.multifit(fetch_only_fixed=False, iterpath="serpentine", optimizer="trf")
+        self.m.multifit(fetch_only_fixed=False, optimizer="trf")
         np.testing.assert_array_almost_equal(self.m[0].r.map["values"], [3.0, 100.0])
         np.testing.assert_array_almost_equal(self.m[0].A.map["values"], [2.0, 2.0])
 
     def test_fetch_only_fixed_true(self):
-        # HyperSpy 2.0: remove setting iterpath='serpentine'
-        self.m.multifit(fetch_only_fixed=True, iterpath="serpentine", optimizer="trf")
+        self.m.multifit(fetch_only_fixed=True, optimizer="trf")
         np.testing.assert_array_almost_equal(self.m[0].r.map["values"], [3.0, 3.0])
         np.testing.assert_array_almost_equal(self.m[0].A.map["values"], [2.0, 2.0])
 
@@ -528,8 +557,7 @@ class TestMultifit:
         rs = self.m[0].r.as_signal(field="values")
         np.testing.assert_allclose(rs.data, np.array([2.0, 100.0]))
         assert rs.get_noise_variance() is None
-        # HyperSpy 2.0: remove setting iterpath='serpentine'
-        self.m.multifit(fetch_only_fixed=True, iterpath="serpentine")
+        self.m.multifit(fetch_only_fixed=True)
         rs = self.m[0].r.as_signal(field="values")
         assert rs.get_noise_variance() is not None
         assert isinstance(rs.get_noise_variance(), hs.signals.Signal1D)
@@ -541,27 +569,54 @@ class TestMultifit:
         m.signal.data *= 2.0
         m[0].A.value = 2.0
         m[0].A.bmin = 3.0
-        # HyperSpy 2.0: remove setting iterpath='serpentine'
-        m.multifit(optimizer=optimizer, bounded=True, iterpath="serpentine")
+        m.multifit(optimizer=optimizer, bounded=True)
         np.testing.assert_allclose(self.m[0].r.map["values"], [3.0, 3.0], rtol=TOL)
         np.testing.assert_allclose(self.m[0].A.map["values"], [4.0, 4.0], rtol=TOL)
 
-    @pytest.mark.parametrize("iterpath", ["flyback", "serpentine"])
+    @pytest.mark.parametrize("iterpath", [None, "flyback", "serpentine"])
     def test_iterpaths(self, iterpath):
         self.m.multifit(iterpath=iterpath)
 
-    def test_iterpath_none(self):
-        with pytest.warns(
-            VisibleDeprecationWarning,
-            match="default will change from 'flyback' to 'serpentine'",
-        ):
-            self.m.multifit()  # iterpath = None by default
+    def test_interactive_plot(self):
+        m = self.m
+        m.multifit(interactive_plot=True)
 
-        with pytest.warns(
-            VisibleDeprecationWarning,
-            match="default will change from 'flyback' to 'serpentine'",
-        ):
-            self.m.multifit(iterpath=None)
+    def test_autosave(self):
+        m = self.m
+        m.multifit(autosave=True, autosave_every=1)
+
+
+def _generate():
+    for i in range(3):
+        yield (i, i)
+
+
+class Test_multifit_iterpath:
+    def setup_method(self, method):
+        data = np.ones((3, 3, 10))
+        s = hs.signals.Signal1D(data)
+        ax = s.axes_manager
+        m = s.create_model()
+        G = hs.model.components1D.Gaussian()
+        m.append(G)
+        self.m = m
+        self.ax = ax
+
+    def test_custom_iterpath(self):
+        indices = np.array([(0, 0), (1, 1), (2, 2)])
+        self.ax.iterpath = indices
+        self.m.multifit(iterpath=indices)
+        set_indices = np.array(np.where(self.m[0].A.map["is_set"])).T
+        np.testing.assert_array_equal(set_indices, indices[:, ::-1])
+
+    def test_model_generator(self):
+        gen = _generate()
+        self.m.axes_manager.iterpath = gen
+        self.m.multifit()
+
+    def test_model_GeneratorLen(self):
+        gen = GeneratorLen(_generate(), 3)
+        self.m.axes_manager.iterpath = gen
 
 
 @lazifyTestClass
@@ -571,24 +626,20 @@ class TestMultiFitSignalVariance:
             np.arange(100, 300, dtype="float64").reshape((2, 100))
         )
         s = variance.deepcopy()
-        np.random.seed(1)
         std = 10
-        np.random.seed(1)
-        s.add_gaussian_noise(std)
-        np.random.seed(1)
-        s.add_poissonian_noise()
-        s.set_noise_variance(variance + std ** 2)
+        s.add_gaussian_noise(std, random_state=1)
+        s.add_poissonian_noise(random_state=1)
+        s.set_noise_variance(variance + std**2)
         m = s.create_model()
-        m.append(hs.model.components1D.Polynomial(order=1, legacy=False))
+        m.append(hs.model.components1D.Polynomial(order=1))
         self.s = s
         self.m = m
-        self.var = (variance + std ** 2).data
+        self.var = (variance + std**2).data
 
     def test_std1_red_chisq(self):
-        # HyperSpy 2.0: remove setting iterpath='serpentine'
-        self.m.multifit(iterpath="serpentine")
-        np.testing.assert_allclose(self.m.red_chisq.data[0], 0.813109, rtol=TOL)
-        np.testing.assert_allclose(self.m.red_chisq.data[1], 0.697727, rtol=TOL)
+        self.m.multifit()
+        np.testing.assert_allclose(self.m.red_chisq.data[0], 0.788126, rtol=TOL)
+        np.testing.assert_allclose(self.m.red_chisq.data[1], 0.738929, rtol=TOL)
 
 
 def test_missing_analytical_gradient():
@@ -604,6 +655,7 @@ def test_missing_analytical_gradient():
     referenced in that issue.
 
     """
+    pytest.importorskip("exspy")
     metadata_dict = {
         "Acquisition_instrument": {
             "TEM": {
@@ -617,13 +669,14 @@ def test_missing_analytical_gradient():
         }
     }
 
-    np.random.seed(1)
     s = hs.signals.Signal1D(np.arange(1000).astype(float), metadata=metadata_dict)
     s.set_signal_type("EELS")
-    s.add_gaussian_noise(10)
+    s.add_gaussian_noise(10, random_state=1)
     m = s.create_model(auto_add_edges=False)
 
-    e1 = hs.model.components1D.EELSCLEdge("Zr_L3")
+    from exspy.components import EELSCLEdge
+
+    e1 = EELSCLEdge("Zr_L3")
     e1.intensity.bmin = 0
     e1.intensity.bmax = 0.1
 

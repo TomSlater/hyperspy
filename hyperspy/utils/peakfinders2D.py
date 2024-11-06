@@ -1,40 +1,72 @@
 # -*- coding: utf-8 -*-
-# Copyright 2007-2021 The HyperSpy developers
+# Copyright 2007-2024 The HyperSpy developers
 #
-# This file is part of  HyperSpy.
+# This file is part of HyperSpy.
 #
-#  HyperSpy is free software: you can redistribute it and/or modify
+# HyperSpy is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-#  HyperSpy is distributed in the hope that it will be useful,
+# HyperSpy is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with  HyperSpy.  If not, see <http://www.gnu.org/licenses/>.
+# along with HyperSpy. If not, see <https://www.gnu.org/licenses/#GPL>.
 
 import copy
 
-from numba import njit
 import numpy as np
 import scipy.ndimage as ndi
 from skimage.feature import blob_dog, blob_log, match_template, peak_local_max
 
+from hyperspy.decorators import jit_ifnumba
 from hyperspy.misc.machine_learning import import_sklearn
 
 NO_PEAKS = np.array([[np.nan, np.nan]])
 
 
-@njit(cache=True)
+def _get_peak_position_and_intensity(X, f, **kwargs):
+    """
+    Take some function, f, and apply it to the 2d array X returning a list
+    of peak positions.  The intensity at each peak position is then appended
+    to the returned list of peaks
+
+    Parameters
+    ----------
+    X: 2-D array-like
+        The input image used to find peaks
+    f: func
+        The passed function to find peaks
+    kwargs:
+        Any additional keyword arguments passed to f
+
+    Returns
+    -------
+        peaks:array-like
+            A 2d array with columns [x, y, intensity]
+
+    """
+    peaks = f(X, **kwargs)
+
+    if np.any(np.isnan(peaks)):  # handle no peaks
+        return np.array([[np.nan, np.nan, np.nan]])
+    else:
+        peaks_indices = np.round(peaks).astype(int)
+        intensity = X[peaks_indices[:, 0], peaks_indices[:, 1]]
+
+        return np.concatenate([peaks, intensity[:, np.newaxis]], axis=1)
+
+
+@jit_ifnumba(cache=True)
 def _fast_mean(X):  # pragma: no cover
     """JIT-compiled mean of array.
 
     Parameters
     ----------
-    X : :py:class:`numpy.ndarray`
+    X : :class:`numpy.ndarray`
         Input array.
 
     Returns
@@ -51,13 +83,13 @@ def _fast_mean(X):  # pragma: no cover
     return np.mean(X)
 
 
-@njit(cache=True)
+@jit_ifnumba(cache=True)
 def _fast_std(X):  # pragma: no cover
     """JIT-compiled standard deviation of array.
 
     Parameters
     ----------
-    X : :py:class:`numpy.ndarray`
+    X : :class:`numpy.ndarray`
         Input array.
 
     Returns
@@ -79,12 +111,12 @@ def clean_peaks(peaks):
 
     Parameters
     ----------
-    peaks : :py:class:`numpy.ndarray`
+    peaks : :class:`numpy.ndarray`
         Array of found peaks.
 
     Returns
     -------
-    peaks : :py:class:`numpy.ndarray`
+    peaks : :class:`numpy.ndarray`
         Sorted array, first by `peaks[:,1]` (y-coordinate) then by `peaks[:,0]`
         (x-coordinate), of found peaks.
     NO_PEAKS : str
@@ -94,36 +126,35 @@ def clean_peaks(peaks):
     if len(peaks) == 0:
         return NO_PEAKS
     else:
-        ind = np.lexsort((peaks[:,0], peaks[:,1]))
+        ind = np.lexsort((peaks[:, 0], peaks[:, 1]))
         return peaks[ind]
 
 
 def find_local_max(z, **kwargs):
     """Method to locate positive peaks in an image by local maximum searching.
 
-    This function wraps :py:func:`skimage.feature.peak_local_max` function and
+    This function wraps :func:`skimage.feature.peak_local_max` function and
     sorts the results for consistency with other peak finding methods.
 
     Parameters
     ----------
-    z : :py:class:`numpy.ndarray`
+    z : :class:`numpy.ndarray`
         Array of image intensities.
     **kwargs : dict
-        Keyword arguments to be passed to the ``peak_local_max`` method of
-        the ``scikit-image`` library. See its documentation for details
-        http://scikit-image.org/docs/dev/api/skimage.feature.html#peak-local-max
+        Keyword arguments to be passed to the
+        :func:`skimage.feature.peak_local_max` function.
 
     Returns
     -------
-    peaks : :py:class:`numpy.ndarray` of shape (n_peaks, 2)
-        Peak pixel coordinates.
+    :class:`numpy.ndarray`
+        Peak pixel coordinates with shape (n_peaks, 2).
 
     """
     peaks = peak_local_max(z, **kwargs)
     return clean_peaks(peaks)
 
 
-def find_peaks_minmax(z, distance=5., threshold=10.):
+def find_peaks_minmax(z, distance=5.0, threshold=10.0):
     """Method to locate the positive peaks in an image by comparing maximum
     and minimum filtered images.
 
@@ -138,23 +169,22 @@ def find_peaks_minmax(z, distance=5., threshold=10.):
 
     Returns
     -------
-    peaks : :py:class:`numpy.ndarray` of shape (n_peaks, 2)
-        Peak pixel coordinates.
+    peaks : :class:`numpy.ndarray`
+        Peak pixel coordinates with shape (n_peaks, 2).
 
     """
-    data_max = ndi.filters.maximum_filter(z, distance)
-    maxima = (z == data_max)
-    data_min = ndi.filters.minimum_filter(z, distance)
-    diff = ((data_max - data_min) > threshold)
+    data_max = ndi.maximum_filter(z, distance)
+    maxima = z == data_max
+    data_min = ndi.minimum_filter(z, distance)
+    diff = (data_max - data_min) > threshold
     maxima[diff == 0] = 0
     labeled, num_objects = ndi.label(maxima)
-    peaks = np.array(
-        ndi.center_of_mass(z, labeled, range(1, num_objects + 1)))
+    peaks = np.array(ndi.center_of_mass(z, labeled, range(1, num_objects + 1)))
 
     return clean_peaks(np.round(peaks).astype(int))
 
 
-def find_peaks_max(z, alpha=3., distance=10):
+def find_peaks_max(z, alpha=3.0, distance=10):
     """Method to locate positive peaks in an image by local maximum searching.
 
     Parameters
@@ -169,8 +199,8 @@ def find_peaks_max(z, alpha=3., distance=10):
 
     Returns
     -------
-    peaks : :py:class:`numpy.ndarray` of shape (n_peaks, 2)
-        Peak pixel coordinates.
+    peaks : :class:`numpy.ndarray`
+        Peak pixel coordinates with shape (n_peaks, 2).
 
     """
     # preallocate lots of peak storage
@@ -190,8 +220,9 @@ def find_peaks_max(z, alpha=3., distance=10):
             y = np.arange(j - distance, j + distance)
             xv, yv = np.meshgrid(x, y)
             # clip to handle peaks near image edge
-            image_temp[yv.clip(0, image_temp.shape[0] - 1),
-                       xv.clip(0, image_temp.shape[1] - 1)] = 0
+            image_temp[
+                yv.clip(0, image_temp.shape[0] - 1), xv.clip(0, image_temp.shape[1] - 1)
+            ] = 0
             peak_ct += 1
         else:
             break
@@ -199,14 +230,13 @@ def find_peaks_max(z, alpha=3., distance=10):
     return clean_peaks(peaks)
 
 
-def find_peaks_zaefferer(z, grad_threshold=0.1, window_size=40,
-                         distance_cutoff=50.):
+def find_peaks_zaefferer(z, grad_threshold=0.1, window_size=40, distance_cutoff=50.0):
     """Method to locate positive peaks in an image based on gradient
     thresholding and subsequent refinement within masked regions.
 
     Parameters
     ----------
-    z : :py:class:`numpy.ndarray`
+    z : :class:`numpy.ndarray`
         Matrix of image intensities.
     grad_threshold : float
         The minimum gradient required to begin a peak search.
@@ -220,8 +250,8 @@ def find_peaks_zaefferer(z, grad_threshold=0.1, window_size=40,
 
     Returns
     -------
-    peaks : :py:class:`numpy.ndarray` of shape (n_peaks, 2)
-        Peak pixel coordinates.
+    peaks : :class:`numpy.ndarray`
+        Peak pixel coordinates with shape (n_peaks, 2).
 
     Notes
     -----
@@ -254,19 +284,19 @@ def find_peaks_zaefferer(z, grad_threshold=0.1, window_size=40,
 
         Parameters
         ----------
-        image : :py:class:`numpy.ndarray`
+        image : :class:`numpy.ndarray`
             The image for which the gradient will be calculated.
 
         Returns
         -------
-        gradient_of_image : :py:class:`numpy.ndarray`
+        gradient_of_image : :class:`numpy.ndarray`
             The gradient of the image.
 
         """
         gradient_of_image = np.gradient(image)
-        gradient_of_image = gradient_of_image[0] ** 2 + gradient_of_image[
-                                                            1] ** 2
+        gradient_of_image = gradient_of_image[0] ** 2 + gradient_of_image[1] ** 2
         return gradient_of_image
+
     # Check window size is appropriate.
     if window_size < 2:
         raise ValueError("`window_size` must be >= 2.")
@@ -281,13 +311,12 @@ def find_peaks_zaefferer(z, grad_threshold=0.1, window_size=40,
     coordinates = coordinates[(image_gradient >= grad_threshold).flatten()]
 
     # Compare against squared distance (avoids repeated sqrt calls)
-    distance_cutoff_sq = distance_cutoff ** 2
+    distance_cutoff_sq = distance_cutoff**2
 
     peaks = []
     for coordinate in coordinates:
         # Iterate over coordinates where the gradient is high enough.
-        b = box(coordinate[0], coordinate[1], window_size, z.shape[0],
-                z.shape[1])
+        b = box(coordinate[0], coordinate[1], window_size, z.shape[0], z.shape[1])
         p_old = (0, 0)
         p_new = get_max(z, b)
 
@@ -308,7 +337,7 @@ def find_peaks_stat(z, alpha=1.0, window_radius=10, convergence_ratio=0.05):
 
     Parameters
     ----------
-    z : :py:class:`numpy.ndarray`
+    z : :class:`numpy.ndarray`
         Array of image intensities.
     alpha : float
         Only maxima above `alpha * sigma` are found, where `sigma` is the
@@ -322,8 +351,8 @@ def find_peaks_stat(z, alpha=1.0, window_radius=10, convergence_ratio=0.05):
 
     Returns
     -------
-    peaks : :py:class:`numpy.ndarray` of shape (n_peaks, 2)
-        Peak pixel coordinates.
+    peaks : :class:`numpy.ndarray`
+        Peak pixel coordinates with with shape (n_peaks, 2).
 
     Notes
     -----
@@ -361,7 +390,7 @@ def find_peaks_stat(z, alpha=1.0, window_radius=10, convergence_ratio=0.05):
         """Calculates rolling method 'func' over a circular kernel."""
         x, y = np.ogrid[-radius : radius + 1, -radius : radius + 1]
         kernel = np.hypot(x, y) < radius
-        stat = ndi.filters.generic_filter(image, func, footprint=kernel)
+        stat = ndi.generic_filter(image, func, footprint=kernel)
         return stat
 
     def local_mean(image, radius):
@@ -375,7 +404,7 @@ def find_peaks_stat(z, alpha=1.0, window_radius=10, convergence_ratio=0.05):
     def single_pixel_desensitize(image):
         """Reduces single-pixel anomalies by nearest-neighbor smoothing."""
         kernel = np.array([[0.5, 1, 0.5], [1, 1, 1], [0.5, 1, 0.5]])
-        smoothed_image = ndi.filters.generic_filter(image, _fast_mean, footprint=kernel)
+        smoothed_image = ndi.generic_filter(image, _fast_mean, footprint=kernel)
         return smoothed_image
 
     def stat_binarise(image):
@@ -390,8 +419,8 @@ def find_peaks_stat(z, alpha=1.0, window_radius=10, convergence_ratio=0.05):
 
     def smooth(image):
         """Image convolved twice using a uniform 3x3 kernel."""
-        image = ndi.filters.uniform_filter(image, size=3)
-        image = ndi.filters.uniform_filter(image, size=3)
+        image = ndi.uniform_filter(image, size=3)
+        image = ndi.uniform_filter(image, size=3)
         return image
 
     def half_binarise(image):
@@ -445,26 +474,32 @@ def find_peaks_stat(z, alpha=1.0, window_radius=10, convergence_ratio=0.05):
     return clean_peaks(stat_peak_finder(z, convergence_ratio))
 
 
-def find_peaks_dog(z, min_sigma=1., max_sigma=50., sigma_ratio=1.6,
-                   threshold=0.2, overlap=0.5, exclude_border=False):
+def find_peaks_dog(
+    z,
+    min_sigma=1.0,
+    max_sigma=50.0,
+    sigma_ratio=1.6,
+    threshold=0.2,
+    overlap=0.5,
+    exclude_border=False,
+):
     """Method to locate peaks via the Difference of Gaussian Matrices method.
 
-    This function wraps :py:func:`skimage.feature.blob_dog` function and
+    This function wraps :func:`skimage.feature.blob_dog` function and
     sorts the results for consistency with other peak finding methods.
 
     Parameters
     ----------
-    z : :py:class:`numpy.ndarray`
+    z : :class:`numpy.ndarray`
         2-d array of intensities
     min_sigma, max_sigma, sigma_ratio, threshold, overlap, exclude_border :
-        Additional parameters to be passed to the algorithm. See `blob_dog`
-        documentation for details:
-        http://scikit-image.org/docs/dev/api/skimage.feature.html#blob-dog
+        Additional parameters to be passed to the
+        :func:`skimage.feature.blob_dog` function
 
     Returns
     -------
-    peaks : :py:class:`numpy.ndarray` of shape (n_peaks, 2)
-        Peak pixel coordinates.
+    peaks : :class:`numpy.ndarray`
+        Peak pixel coordinates with shape (n_peaks, 2).
 
     Notes
     -----
@@ -473,56 +508,79 @@ def find_peaks_dog(z, min_sigma=1., max_sigma=50., sigma_ratio=1.6,
 
     """
     z = z / np.max(z)
-    blobs = blob_dog(z, min_sigma=min_sigma, max_sigma=max_sigma,
-                     sigma_ratio=sigma_ratio, threshold=threshold,
-                     overlap=overlap, exclude_border=exclude_border)
+    blobs = blob_dog(
+        z,
+        min_sigma=min_sigma,
+        max_sigma=max_sigma,
+        sigma_ratio=sigma_ratio,
+        threshold=threshold,
+        overlap=overlap,
+        exclude_border=exclude_border,
+    )
     try:
         centers = np.round(blobs[:, :2]).astype(int)
     except IndexError:
         return NO_PEAKS
     clean_centers = []
     for center in centers:
-        if len(np.intersect1d(center, (0, 1) + z.shape + tuple(
-                        c - 1 for c in z.shape))) > 0:
+        if (
+            len(
+                np.intersect1d(center, (0, 1) + z.shape + tuple(c - 1 for c in z.shape))
+            )
+            > 0
+        ):
             continue
         clean_centers.append(center)
     return clean_peaks(np.array(clean_centers))
 
 
-def find_peaks_log(z, min_sigma=1., max_sigma=50., num_sigma=10,
-                   threshold=0.2, overlap=0.5, log_scale=False,
-                   exclude_border=False):
+def find_peaks_log(
+    z,
+    min_sigma=1.0,
+    max_sigma=50.0,
+    num_sigma=10,
+    threshold=0.2,
+    overlap=0.5,
+    log_scale=False,
+    exclude_border=False,
+):
     """Method to locate peaks via the Laplacian of Gaussian Matrices method.
 
-    This function wraps :py:func:`skimage.feature.blob_log` function and
+    This function wraps :func:`skimage.feature.blob_log` function and
     sorts the results for consistency with other peak finding methods.
 
     Parameters
     ----------
-    z : :py:class:`numpy.ndarray`
+    z : :class:`numpy.ndarray`
         Array of image intensities.
     min_sigma, max_sigma, num_sigma, threshold, overlap, log_scale, exclude_border :
-        Additional parameters to be passed to the ``blob_log`` method of the
-        ``scikit-image`` library. See its documentation for details:
-        http://scikit-image.org/docs/dev/api/skimage.feature.html#blob-log
+        Additional parameters to be passed to the
+        :func:`skimage.feature.blob_log` function.
 
     Returns
     -------
-    peaks : :py:class:`numpy.ndarray` of shape (n_peaks, 2)
-        Peak pixel coordinates.
+    peaks : :class:`numpy.ndarray`
+        Peak pixel coordinates with shape (n_peaks, 2).
 
     """
     z = z / np.max(z)
     if isinstance(num_sigma, float):
         raise ValueError("`num_sigma` parameter should be an integer.")
-    blobs = blob_log(z, min_sigma=min_sigma, max_sigma=max_sigma,
-                     num_sigma=num_sigma, threshold=threshold, overlap=overlap,
-                     log_scale=log_scale, exclude_border=exclude_border)
+    blobs = blob_log(
+        z,
+        min_sigma=min_sigma,
+        max_sigma=max_sigma,
+        num_sigma=num_sigma,
+        threshold=threshold,
+        overlap=overlap,
+        log_scale=log_scale,
+        exclude_border=exclude_border,
+    )
     # Attempt to return only peak positions. If no peaks exist, return an
     # empty array.
     try:
         centers = np.round(blobs[:, :2]).astype(int)
-        ind = np.lexsort((centers[:,0], centers[:,1]))
+        ind = np.lexsort((centers[:, 0], centers[:, 1]))
     except IndexError:
         return NO_PEAKS
     return centers[ind]
@@ -530,15 +588,15 @@ def find_peaks_log(z, min_sigma=1., max_sigma=50., num_sigma=10,
 
 def find_peaks_xc(z, template, distance=5, threshold=0.5, **kwargs):
     """Find peaks in the cross correlation between the image and a template by
-    using the :py:func:`~hyperspy.utils.peakfinders2D.find_peaks_minmax` function
+    using the :func:`~hyperspy.utils.peakfinders2D.find_peaks_minmax` function
     to find the peaks on the cross correlation result obtained using the
-    :py:func:`skimage.feature.match_template` function.
+    :func:`skimage.feature.match_template` function.
 
     Parameters
     ----------
-    z : :py:class:`numpy.ndarray`
+    z : :class:`numpy.ndarray`
         Array of image intensities.
-    template : numpy.ndarray (square)
+    template : numpy.ndarray
         Array containing a single bright disc, similar to those to detect.
     distance : float
         Expected distance between peaks.
@@ -546,17 +604,15 @@ def find_peaks_xc(z, template, distance=5, threshold=0.5, **kwargs):
         Minimum difference between maximum and minimum filtered images.
     **kwargs : dict
         Keyword arguments to be passed to the
-        :py:func:`skimage.feature.match_template` function.
+        :func:`skimage.feature.match_template` function.
 
     Returns
     -------
-    peaks : :py:class:`numpy.ndarray` of shape (n_peaks, 2)
-        Array of peak coordinates.
+    peaks : :class:`numpy.ndarray`
+        Array of peak coordinates with shape (n_peaks, 2).
     """
-    pad_input = kwargs.pop('pad_input', True)
+    pad_input = kwargs.pop("pad_input", True)
     response_image = match_template(z, template, pad_input=pad_input, **kwargs)
-    peaks = find_peaks_minmax(response_image,
-                              distance=distance,
-                              threshold=threshold)
+    peaks = find_peaks_minmax(response_image, distance=distance, threshold=threshold)
 
     return clean_peaks(peaks)

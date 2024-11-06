@@ -1,20 +1,20 @@
 # -*- coding: utf-8 -*-
-# Copyright 2007-2021 The HyperSpy developers
+# Copyright 2007-2024 The HyperSpy developers
 #
-# This file is part of  HyperSpy.
+# This file is part of HyperSpy.
 #
-#  HyperSpy is free software: you can redistribute it and/or modify
+# HyperSpy is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-#  HyperSpy is distributed in the hope that it will be useful,
+# HyperSpy is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with  HyperSpy.  If not, see <http://www.gnu.org/licenses/>.
+# along with HyperSpy. If not, see <https://www.gnu.org/licenses/#GPL>.
 
 from __future__ import print_function
 
@@ -27,8 +27,7 @@ import hyperspy.api as hs
 from hyperspy.events import Event
 
 
-class TestInteractive():
-
+class TestInteractive:
     def setup_method(self, method):
         d = np.linspace(3, 10.5)
         d = np.tile(d, (3, 3, 1))
@@ -51,6 +50,7 @@ class TestInteractive():
 
         def sumf(axis):
             return s.sum(axis=axis)
+
         e = Event()
         ss = hs.interactive(sumf, e, axis=0)
         np.testing.assert_array_equal(ss.data, np.sum(s.data, axis=0))
@@ -120,13 +120,7 @@ class TestInteractive():
         s = self.s
         e1 = Event()
         e2 = Event()
-        ss = hs.interactive(
-            s.sum,
-            event=(
-                e1,
-                e2),
-            recompute_out_event=None,
-            axis=0)
+        ss = hs.interactive(s.sum, event=(e1, e2), recompute_out_event=None, axis=0)
         s.data[:] = 0
         e1.trigger()
         np.testing.assert_equal(ss.data, np.sum(s.data, axis=1))
@@ -138,13 +132,7 @@ class TestInteractive():
         s = self.s
         e1 = Event()
         e2 = Event()
-        ss = hs.interactive(
-            s.sum,
-            event=None,
-            recompute_out_event=(
-                e1,
-                e2),
-            axis=0)
+        ss = hs.interactive(s.sum, event=None, recompute_out_event=(e1, e2), axis=0)
         s.data[:] = 0
         e1.trigger()
         np.testing.assert_equal(ss.data, np.sum(s.data, axis=1))
@@ -154,7 +142,9 @@ class TestInteractive():
 
     def test_interactive_function_return_None(self):
         e = Event()
+
         def function_return_None():
-            print('function called')
+            print("function called")
+
         hs.interactive(function_return_None, e)
         e.trigger()

@@ -1,25 +1,26 @@
 # -*- coding: utf-8 -*-
-# Copyright 2007-2021 The HyperSpy developers
+# Copyright 2007-2024 The HyperSpy developers
 #
-# This file is part of  HyperSpy.
+# This file is part of HyperSpy.
 #
-#  HyperSpy is free software: you can redistribute it and/or modify
+# HyperSpy is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-#  HyperSpy is distributed in the hope that it will be useful,
+# HyperSpy is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with  HyperSpy.  If not, see <http://www.gnu.org/licenses/>.
+# along with HyperSpy. If not, see <https://www.gnu.org/licenses/#GPL>.
 
 import math
-import numpy as np
-from hyperspy._components.expression import Expression
 
+import numpy as np
+
+from hyperspy._components.expression import Expression
 
 sigma2fwhm = 2 * np.sqrt(2 * np.log(2))
 
@@ -45,7 +46,8 @@ class Gaussian2D(Expression):
     Parameters
     ----------
     A : float
-        Amplitude (height of the peak scaled by :math:`2 \pi s_x s_y`).
+        Volume (height of the peak scaled by :math:`2 \pi s_x s_y`) --
+        eqivalent to the area in a 1D Gaussian.
     sigma_x : float
         Width (scale parameter) of the Gaussian distribution in `x` direction.
     sigma_y : float
@@ -57,6 +59,9 @@ class Gaussian2D(Expression):
     add_rotation : bool
         If True, add the parameter `rotation_angle` corresponding to the angle
         between the `x` and the horizontal axis.
+    **kwargs
+        Extra keyword arguments are passed to the
+        :class:`~.api.model.components1D.Expression` component.
 
     Attributes
     ----------
@@ -65,8 +70,16 @@ class Gaussian2D(Expression):
         the two axes.
     """
 
-    def __init__(self, A=1., sigma_x=1., sigma_y=1., centre_x=0.,
-                 centre_y=0, module="numexpr", **kwargs):
+    def __init__(
+        self,
+        A=1.0,
+        sigma_x=1.0,
+        sigma_y=1.0,
+        centre_x=0.0,
+        centre_y=0,
+        module=None,
+        **kwargs,
+    ):
         super().__init__(
             expression="A * (1 / (sigma_x * sigma_y * 2 * pi)) * \
                        exp(-((x - centre_x) ** 2 / (2 * sigma_x ** 2) \
@@ -80,13 +93,14 @@ class Gaussian2D(Expression):
             position=("centre_x", "centre_y"),
             module=module,
             autodoc=False,
-            **kwargs)
+            **kwargs,
+        )
 
         # Boundaries
-        self.A.bmin = 0.
+        self.A.bmin = 0.0
 
-        self.sigma_x.bmin = 0.
-        self.sigma_y.bmin = 0.
+        self.sigma_x.bmin = 0.0
+        self.sigma_y.bmin = 0.0
 
         self.isbackground = False
         self.convolved = True
@@ -101,7 +115,6 @@ class Gaussian2D(Expression):
 
     @property
     def fwhm_y(self):
-
         return self.sigma_y.value * sigma2fwhm
 
     @fwhm_y.setter
@@ -139,8 +152,7 @@ class Gaussian2D(Expression):
 
     @property
     def ellipticity(self):
-        """float: Ratio between the major and minor axis.
-        """
+        """float: Ratio between the major and minor axis."""
         return self.sigma_major / self.sigma_minor
 
     @property

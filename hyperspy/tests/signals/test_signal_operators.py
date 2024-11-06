@@ -1,20 +1,20 @@
 # -*- coding: utf-8 -*-
-# Copyright 2007-2021 The HyperSpy developers
+# Copyright 2007-2024 The HyperSpy developers
 #
-# This file is part of  HyperSpy.
+# This file is part of HyperSpy.
 #
-#  HyperSpy is free software: you can redistribute it and/or modify
+# HyperSpy is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-#  HyperSpy is distributed in the hope that it will be useful,
+# HyperSpy is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with  HyperSpy.  If not, see <http://www.gnu.org/licenses/>.
+# along with HyperSpy. If not, see <https://www.gnu.org/licenses/#GPL>.
 
 
 import numpy as np
@@ -27,7 +27,6 @@ from hyperspy.decorators import lazifyTestClass
 
 @lazifyTestClass
 class TestBinaryOperators:
-
     def setup_method(self, method):
         self.s1 = signals.Signal1D(np.ones((2, 3)))
         self.s2 = signals.Signal1D(np.ones((2, 3)))
@@ -140,7 +139,6 @@ class TestBinaryOperators:
 
 @lazifyTestClass
 class TestUnaryOperators:
-
     def setup_method(self, method):
         self.s1 = signals.Signal1D(np.array((1, -1, 4, -3)))
 
@@ -155,3 +153,31 @@ class TestUnaryOperators:
 
     def test_abs(self):
         assert_array_equal(abs(self.s1).data, abs(self.s1.data))
+
+
+def test_numpy_function_on_signals():
+    s = signals.BaseSignal(np.array((1, -1, 4, -3))).T
+    np.testing.assert_allclose(np.sum(s), np.sum(s.data))
+
+
+def test_signal__array__():
+    s = signals.BaseSignal(np.array((1, -1, 4, -3)))
+    arr = s.__array__()
+    assert arr.dtype == int
+
+    arr2 = s.__array__(dtype=float)
+    assert arr2.dtype == float
+    assert arr2 is not s.data
+
+    arr3 = s.__array__(copy=False)
+    assert arr3 is s.data
+
+    arr4 = s.__array__(copy=True)
+    assert arr4 is not s.data
+
+    with pytest.raises(ValueError):
+        _ = s.__array__(dtype=float, copy=False)
+
+    arr5 = s.__array__(dtype=float, copy=True)
+    assert arr5 is not s.data
+    assert arr5.dtype == float

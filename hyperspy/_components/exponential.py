@@ -1,32 +1,31 @@
 # -*- coding: utf-8 -*-
-# Copyright 2007-2021 The HyperSpy developers
+# Copyright 2007-2024 The HyperSpy developers
 #
-# This file is part of  HyperSpy.
+# This file is part of HyperSpy.
 #
-#  HyperSpy is free software: you can redistribute it and/or modify
+# HyperSpy is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-#  HyperSpy is distributed in the hope that it will be useful,
+# HyperSpy is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with  HyperSpy.  If not, see <http://www.gnu.org/licenses/>.
+# along with HyperSpy. If not, see <https://www.gnu.org/licenses/#GPL>.
 
-import numpy as np
 import logging
 
+import numpy as np
+
 from hyperspy._components.expression import Expression
-from hyperspy.misc.utils import is_binned # remove in v2.0
 
 _logger = logging.getLogger(__name__)
 
 
 class Exponential(Expression):
-
     r"""Exponential function component.
 
     .. math::
@@ -42,16 +41,17 @@ class Exponential(Expression):
 
 
     Parameters
-    -----------
+    ----------
     A: float
         Maximum intensity
     tau: float
         Scale parameter (time constant)
     **kwargs
-        Extra keyword arguments are passed to the ``Expression`` component.
+        Extra keyword arguments are passed to the
+        :class:`~.api.model.components1D.Expression` component.
     """
 
-    def __init__(self, A=1., tau=1., module="numexpr", **kwargs):
+    def __init__(self, A=1.0, tau=1.0, module=None, **kwargs):
         super().__init__(
             expression="A * exp(-x / tau)",
             name="Exponential",
@@ -70,7 +70,7 @@ class Exponential(Expression):
 
         Parameters
         ----------
-        signal : BaseSignal instance
+        signal : :class:`~.api.signals.Signal1D`
         x1 : float
             Defines the left limit of the spectral range to use for the
             estimation.
@@ -106,13 +106,14 @@ class Exponential(Expression):
 
         if s._lazy:
             import dask.array as da
+
             exp = da.exp
             log = da.log
         else:
             exp = np.exp
             log = np.log
 
-        with np.errstate(divide='raise', invalid='raise'):
+        with np.errstate(divide="raise", invalid="raise"):
             try:
                 # use log and exp to compute geometric mean to avoid overflow
                 a1 = s.isig[i1:i_mid].data
@@ -124,8 +125,7 @@ class Exponential(Expression):
                 x1 = (x_start + x_mid) / 2
                 x2 = (x_mid + x_end) / 2
 
-                A = exp((log(geo_mean1) - (x1 / x2) * log(geo_mean2)) /
-                        (1 - x1 / x2))
+                A = exp((log(geo_mean1) - (x1 / x2) * log(geo_mean2)) / (1 - x1 / x2))
                 t = -x2 / (log(geo_mean2) - log(A))
 
                 if s._lazy:
@@ -135,19 +135,22 @@ class Exponential(Expression):
                     A = np.nan_to_num(A)
                     t = np.nan_to_num(t)
 
-            except (FloatingPointError):
+            except FloatingPointError:
                 if i1 == i2:
-                    _logger.warning('Exponential parameters estimation failed '
-                                'because signal range includes only one '
-                                'point.')
+                    _logger.warning(
+                        "Exponential parameters estimation failed "
+                        "because signal range includes only one "
+                        "point."
+                    )
                 else:
-                    _logger.warning('Exponential parameters estimation failed '
-                                'with a "divide by zero" error (likely log of '
-                                'a zero or negative value).')
+                    _logger.warning(
+                        "Exponential parameters estimation failed "
+                        'with a "divide by zero" error (likely log of '
+                        "a zero or negative value)."
+                    )
                 return False
-            if is_binned(signal):
-            # in v2 replace by
-            #if axis.is_binned:
+
+            if axis.is_binned:
                 if axis.is_uniform:
                     A /= axis.scale
                 else:
@@ -161,10 +164,10 @@ class Exponential(Expression):
 
             if self.A.map is None:
                 self._create_arrays()
-            self.A.map['values'][:] = A
-            self.A.map['is_set'][:] = True
-            self.tau.map['values'][:] = t
-            self.tau.map['is_set'][:] = True
+            self.A.map["values"][:] = A
+            self.A.map["is_set"][:] = True
+            self.tau.map["values"][:] = t
+            self.tau.map["is_set"][:] = True
             self.fetch_stored_values()
 
             return True

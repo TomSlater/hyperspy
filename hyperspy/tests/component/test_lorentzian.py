@@ -1,20 +1,20 @@
 # -*- coding: utf-8 -*-
-# Copyright 2007-2021 The HyperSpy developers
+# Copyright 2007-2024 The HyperSpy developers
 #
-# This file is part of  HyperSpy.
+# This file is part of HyperSpy.
 #
-#  HyperSpy is free software: you can redistribute it and/or modify
+# HyperSpy is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-#  HyperSpy is distributed in the hope that it will be useful,
+# HyperSpy is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with  HyperSpy.  If not, see <http://www.gnu.org/licenses/>.
+# along with HyperSpy. If not, see <https://www.gnu.org/licenses/#GPL>.
 
 import itertools
 
@@ -44,7 +44,7 @@ def test_estimate_parameters_binned(only_current, binned, lazy, uniform):
     s = Signal1D(np.empty((250,)))
     s.axes_manager.signal_axes[0].is_binned = binned
     axis = s.axes_manager.signal_axes[0]
-    axis.scale = .2
+    axis.scale = 0.2
     axis.offset = -15
     g1 = Lorentzian(52342, 2, 10)
     s.data = g1.function(axis.axis)
@@ -59,10 +59,11 @@ def test_estimate_parameters_binned(only_current, binned, lazy, uniform):
         factor = np.gradient(axis.axis)
     else:
         factor = 1
-    assert g2.estimate_parameters(s, axis.low_value, axis.high_value,
-                                  only_current=only_current)
+    assert g2.estimate_parameters(
+        s, axis.low_value, axis.high_value, only_current=only_current
+    )
     assert g2._axes_manager[-1].is_binned == binned
-    np.testing.assert_allclose(g1.A.value, g2.A.value * factor,0.1)
+    np.testing.assert_allclose(g1.A.value, g2.A.value * factor, 0.1)
     assert abs(g2.centre.value - g1.centre.value) <= 0.2
     assert abs(g2.gamma.value - g1.gamma.value) <= 0.1
 
@@ -72,7 +73,7 @@ def test_estimate_parameters_binned(only_current, binned, lazy, uniform):
 def test_function_nd(binned, lazy):
     s = Signal1D(np.empty((250,)))
     axis = s.axes_manager.signal_axes[0]
-    axis.scale = .2
+    axis.scale = 0.2
     axis.offset = -15
     g1 = Lorentzian(52342, 2, 10)
     s.data = g1.function(axis.axis)
@@ -84,7 +85,7 @@ def test_function_nd(binned, lazy):
     factor = axis.scale if binned else 1
     g2.estimate_parameters(s2, axis.low_value, axis.high_value, False)
     assert g2._axes_manager[-1].is_binned == binned
-    np.testing.assert_allclose(g2.function_nd(axis.axis) * factor, s2.data,0.16)
+    np.testing.assert_allclose(g2.function_nd(axis.axis) * factor, s2.data, 0.16)
 
 
 def test_util_gamma_getset():
@@ -114,14 +115,14 @@ def test_util_fwhm_getset():
 def test_util_height_set():
     g1 = Lorentzian()
     g1.gamma.value = 4.0
-    g1.height = 2.0/np.pi
+    g1.height = 2.0 / np.pi
     np.testing.assert_allclose(g1.A.value, 8)
 
 
 def test_util_height_get():
     g1 = Lorentzian()
     g1.gamma.value = 3.0
-    g1.A.value = np.pi*1.5
+    g1.A.value = np.pi * 1.5
     np.testing.assert_allclose(g1.height, 0.5)
 
 

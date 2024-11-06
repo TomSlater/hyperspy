@@ -1,33 +1,32 @@
 # -*- coding: utf-8 -*-
-# Copyright 2007-2021 The HyperSpy developers
+# Copyright 2007-2024 The HyperSpy developers
 #
-# This file is part of  HyperSpy.
+# This file is part of HyperSpy.
 #
-#  HyperSpy is free software: you can redistribute it and/or modify
+# HyperSpy is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-#  HyperSpy is distributed in the hope that it will be useful,
+# HyperSpy is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with  HyperSpy.  If not, see <http://www.gnu.org/licenses/>.
+# along with HyperSpy. If not, see <https://www.gnu.org/licenses/#GPL>.
 
 
 import numpy as np
 import pytest
 
-from hyperspy.signals import EDSTEMSpectrum
+from hyperspy.signals import Signal1D
 
 
 class TestLinearRebin:
-
-    @pytest.mark.parametrize('dtype', ['<u2', 'u2', '>u2', '<f4', 'f4', '>f4', 'c8'])
+    @pytest.mark.parametrize("dtype", ["<u2", "u2", ">u2", "<f4", "f4", ">f4", "c8"])
     def test_linear_downsize(self, dtype):
-        spectrum = EDSTEMSpectrum(np.ones([3, 5, 1], dtype=dtype))
+        spectrum = Signal1D(np.ones([3, 5, 1], dtype=dtype))
         scale = (1.5, 2.5, 1)
         res = spectrum.rebin(scale=scale, crop=True)
         np.testing.assert_allclose(res.data, 3.75 * np.ones((1, 3, 1)))
@@ -36,9 +35,9 @@ class TestLinearRebin:
         res = spectrum.rebin(scale=scale, crop=False)
         np.testing.assert_allclose(res.data.sum(), spectrum.data.sum())
 
-    @pytest.mark.parametrize('dtype', ['<u2', 'u2', '>u2', '<f4', 'f4', '>f4', 'c8'])
+    @pytest.mark.parametrize("dtype", ["<u2", "u2", ">u2", "<f4", "f4", ">f4", "c8"])
     def test_linear_upsize(self, dtype):
-        spectrum = EDSTEMSpectrum(np.ones([4, 5, 10], dtype=dtype))
+        spectrum = Signal1D(np.ones([4, 5, 10], dtype=dtype))
         scale = [0.3, 0.2, 0.5]
         res = spectrum.rebin(scale=scale)
         np.testing.assert_allclose(res.data, 0.03 * np.ones((20, 16, 20)))
@@ -48,7 +47,7 @@ class TestLinearRebin:
         np.testing.assert_allclose(res.data.sum(), spectrum.data.sum())
 
     def test_linear_downscale_out(self):
-        spectrum = EDSTEMSpectrum(np.ones([4, 1, 1]))
+        spectrum = Signal1D(np.ones([4, 1, 1]))
         scale = [1, 2, 1]
         offset = [0, 0.5, 0]
         res = spectrum.rebin(scale=scale)
@@ -57,8 +56,8 @@ class TestLinearRebin:
         np.testing.assert_allclose(
             res.data,
             [
-                [[2.]],
-                [[6.]],
+                [[2.0]],
+                [[6.0]],
             ],
         )
         for axis in res.axes_manager._axes:
@@ -66,7 +65,7 @@ class TestLinearRebin:
             assert offset[axis.index_in_axes_manager] == axis.offset
 
     def test_linear_upscale_out(self):
-        spectrum = EDSTEMSpectrum(np.ones([4, 1, 1]))
+        spectrum = Signal1D(np.ones([4, 1, 1]))
         scale = [1, 0.4, 1]
         offset = [0, -0.3, 0]
         res = spectrum.rebin(scale=scale)

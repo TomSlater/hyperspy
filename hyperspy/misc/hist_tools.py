@@ -1,33 +1,50 @@
 # -*- coding: utf-8 -*-
-# Copyright 2007-2021 The HyperSpy developers
+# Copyright 2007-2024 The HyperSpy developers
 #
-# This file is part of  HyperSpy.
+# This file is part of HyperSpy.
 #
-#  HyperSpy is free software: you can redistribute it and/or modify
+# HyperSpy is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-#  HyperSpy is distributed in the hope that it will be useful,
+# HyperSpy is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with  HyperSpy.  If not, see <http://www.gnu.org/licenses/>.
+# along with HyperSpy. If not, see <https://www.gnu.org/licenses/#GPL>.
 
-import logging
 import warnings
 
 import dask.array as da
 import numpy as np
+import traits.api as t
 
-from hyperspy.docstrings.signal import HISTOGRAM_BIN_ARGS, HISTOGRAM_MAX_BIN_ARGS
-from hyperspy.exceptions import VisibleDeprecationWarning
+from hyperspy.docstrings.signal import (
+    HISTOGRAM_BIN_ARGS,
+    HISTOGRAM_MAX_BIN_ARGS,
+    HISTOGRAM_RANGE_ARGS,
+    HISTOGRAM_WEIGHTS_ARGS,
+)
 from hyperspy.external.astropy.bayesian_blocks import bayesian_blocks
 from hyperspy.external.astropy.histogram import knuth_bin_width
 
-_logger = logging.getLogger(__name__)
+
+def _set_histogram_metadata(signal, histogram, **kwargs):
+    name = signal.metadata.get_item("Signal.quantity", "value")
+    units = t.Undefined
+    if "(" in name:
+        name, units = name.split("(")
+        name = name.strip()
+        units = units.strip(")")
+    histogram.axes_manager[0].name = name
+    histogram.axes_manager[0].units = units
+    histogram.axes_manager[0].is_binned = True
+    histogram.metadata.General.title = signal.metadata.General.title + " histogram"
+    quantity = "Probability density" if kwargs.get("density") else "Count"
+    histogram.metadata.Signal.quantity = quantity
 
 
 def histogram(a, bins="fd", range=None, max_num_bins=250, weights=None, **kwargs):
@@ -41,22 +58,11 @@ def histogram(a, bins="fd", range=None, max_num_bins=250, weights=None, **kwargs
     a : array_like
         Input data. The histogram is computed over the flattened array.
     %s
-    range : (float, float), optional
-        The lower and upper range of the bins.  If not provided, range
-        is simply ``(a.min(), a.max())``.  Values outside the range are
-        ignored. The first element of the range must be less than or
-        equal to the second. `range` affects the automatic bin
-        computation as well. While bin width is computed to be optimal
-        based on the actual data within `range`, the bin count will fill
-        the entire range including portions containing no data.
     %s
-    weights : array_like, optional
-        An array of weights, of the same shape as `a`.  Each value in
-        `a` only contributes its associated weight towards the bin count
-        (instead of 1). This is currently not used by any of the bin estimators,
-        but may be in the future.
+    %s
+    %s
     **kwargs :
-        Passed to :py:func:`numpy.histogram`
+        Passed to :func:`numpy.histogram`
 
     Returns
     -------
@@ -68,22 +74,18 @@ def histogram(a, bins="fd", range=None, max_num_bins=250, weights=None, **kwargs
 
     See Also
     --------
-    * :py:func:`numpy.histogram`
+    * :func:`numpy.histogram`
 
     """
     if isinstance(a, da.Array):
-        return histogram_dask(a, bins=bins, max_num_bins=max_num_bins, **kwargs)
-
-    if isinstance(bins, str):
-        _deprecated_bins = {"scotts": "scott", "freedman": "fd"}
-        new_bins = _deprecated_bins.get(bins, None)
-        if new_bins:
-            warnings.warn(
-                f"`bins='{bins}'` has been deprecated and will be removed "
-                f"in HyperSpy 2.0. Please use `bins='{new_bins}'` instead.",
-                VisibleDeprecationWarning,
-                )
-            bins = new_bins
+        return histogram_dask(
+            a,
+            bins=bins,
+            range=range,
+            max_num_bins=max_num_bins,
+            weights=weights,
+            **kwargs,
+        )
 
     _old_bins = bins
 
@@ -105,9 +107,9 @@ def histogram(a, bins="fd", range=None, max_num_bins=250, weights=None, **kwargs
     if _bins_len > max_num_bins:
         # To avoid memory errors such as that detailed in
         # https://github.com/hyperspy/hyperspy/issues/784,
-        # we log a warning and cap the number of bins at
+        # we raise a warning and cap the number of bins at
         # a sensible value.
-        _logger.warning(
+        warnings.warn(
             f"Estimated number of bins using `bins='{_old_bins}'` "
             f"is too large ({_bins_len}). Capping the number of bins "
             f"at `max_num_bins={max_num_bins}`. Consider using an "
@@ -116,14 +118,21 @@ def histogram(a, bins="fd", range=None, max_num_bins=250, weights=None, **kwargs
             "`max_num_bins` keyword argument."
         )
         bins = max_num_bins
+        kwargs["range"] = range
+        kwargs["weights"] = weights
 
     return np.histogram(a, bins=bins, **kwargs)
 
 
-histogram.__doc__ %= (HISTOGRAM_BIN_ARGS, HISTOGRAM_MAX_BIN_ARGS)
+histogram.__doc__ %= (
+    HISTOGRAM_BIN_ARGS,
+    HISTOGRAM_RANGE_ARGS.replace("range_bins : ", "range : "),
+    HISTOGRAM_MAX_BIN_ARGS,
+    HISTOGRAM_WEIGHTS_ARGS,
+)
 
 
-def histogram_dask(a, bins="fd", max_num_bins=250, **kwargs):
+def histogram_dask(a, bins="fd", range=None, max_num_bins=250, weights=None, **kwargs):
     """Enhanced histogram for dask arrays.
 
     The range keyword is ignored. Reads the data at most two times - once to
@@ -144,10 +153,11 @@ def histogram_dask(a, bins="fd", max_num_bins=250, **kwargs):
         'scott'
             Less robust estimator that that takes into account data
             variability and data size.
-
+    %s
+    %s
     %s
     **kwargs :
-        Passed to :py:func:`dask.histogram`
+        Passed to :func:`dask.array.histogram`
 
     Returns
     -------
@@ -159,8 +169,8 @@ def histogram_dask(a, bins="fd", max_num_bins=250, **kwargs):
 
     See Also
     --------
-    * :py:func:`dask.histogram`
-    * :py:func:`numpy.histogram`
+    * :func:`dask.array.histogram`
+    * :func:`numpy.histogram`
 
     """
     if not isinstance(a, da.Array):
@@ -168,17 +178,6 @@ def histogram_dask(a, bins="fd", max_num_bins=250, **kwargs):
 
     if a.ndim != 1:
         a = a.flatten()
-
-    if isinstance(bins, str):
-        _deprecated_bins = {"scotts": "scott", "freedman": "fd"}
-        new_bins = _deprecated_bins.get(bins, None)
-        if new_bins:
-            warnings.warn(
-                f"`bins='{bins}'` has been deprecated and will be removed "
-                f"in HyperSpy 2.0. Please use `bins='{new_bins}'` instead.",
-                VisibleDeprecationWarning,
-                )
-            bins = new_bins
 
     _old_bins = bins
 
@@ -189,7 +188,7 @@ def histogram_dask(a, bins="fd", max_num_bins=250, **kwargs):
             _, bins = _freedman_bw_dask(a, True)
         else:
             raise ValueError(f"Unrecognized 'bins' argument: got {bins}")
-    elif not np.iterable(bins):
+    elif range is None:
         kwargs["range"] = da.compute(a.min(), a.max())
 
     _bins_len = bins if not np.iterable(bins) else len(bins)
@@ -199,7 +198,7 @@ def histogram_dask(a, bins="fd", max_num_bins=250, **kwargs):
         # https://github.com/hyperspy/hyperspy/issues/784,
         # we log a warning and cap the number of bins at
         # a sensible value.
-        _logger.warning(
+        warnings.warn(
             f"Estimated number of bins using `bins='{_old_bins}'` "
             f"is too large ({_bins_len}). Capping the number of bins "
             f"at `max_num_bins={max_num_bins}`. Consider using an "
@@ -208,14 +207,22 @@ def histogram_dask(a, bins="fd", max_num_bins=250, **kwargs):
             "`max_num_bins` keyword argument."
         )
         bins = max_num_bins
-        kwargs["range"] = da.compute(a.min(), a.max())
+        kwargs["weights"] = weights
+        if range is None:
+            kwargs["range"] = da.compute(a.min(), a.max())
+        else:
+            kwargs["range"] = range
 
     h, bins = da.histogram(a, bins=bins, **kwargs)
 
     return h.compute(), bins
 
 
-histogram_dask.__doc__ %= HISTOGRAM_MAX_BIN_ARGS
+histogram_dask.__doc__ %= (
+    HISTOGRAM_RANGE_ARGS,
+    HISTOGRAM_MAX_BIN_ARGS,
+    HISTOGRAM_WEIGHTS_ARGS,
+)
 
 
 def _scott_bw_dask(data, return_bins=True):

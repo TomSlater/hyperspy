@@ -25,9 +25,9 @@ data.
 
 Models can also be provided by external packages, but don't need to
 be registered. Instead, they are returned by the ``create_model`` method of
-the relevant :py:class:`hyperspy.signal.BaseSignal` subclass, see for example,
-the :py:meth:`hyperspy._signals.eds_tem.EDSTEM_mixin.create_model` of the
-:py:class:`~._signals.eds_tem.EDSTEMSpectrum`.
+the relevant :class:`~.api.signals.BaseSignal` subclass, see for example,
+the :meth:`exspy.signals.EDSTEMSpectrum.create_model` of the
+:class:`exspy.signals.EDSTEMSpectrum`.
 
 It is good practice to add all packages that extend HyperSpy
 `to the list of known extensions
@@ -54,10 +54,9 @@ In order to register HyperSpy extensions, you need to:
 
 1. Add the following line to your package's ``setup.py``:
 
-    .. code-block:: python
+   .. code-block:: python
 
-        entry_points={'hyperspy.extensions': 'your_package_name =
-                      your_package_name'},
+      entry_points={'hyperspy.extensions': 'your_package_name = your_package_name'},
 2. Create a ``hyperspy_extension.yaml`` configuration file in your
    module's root directory.
 3. Declare all new HyperSpy objects provided by your package in the
@@ -75,11 +74,11 @@ When and where to create a new ``BaseSignal`` subclass
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 HyperSpy provides most of its functionality through the different
-:py:class:`hyperspy.signal.BaseSignal`
+:class:`~.api.signals.BaseSignal`
 subclasses. A HyperSpy "signal" is a class that contains data for analysis
 and functions to perform the analysis in the form of class methods. Functions
 that are useful for the analysis of most datasets are in the
-:py:class:`hyperspy.signal.BaseSignal` class. All other functions are in
+:class:`~.api.signals.BaseSignal` class. All other functions are in
 specialized subclasses.
 
 The flowchart below can help you decide where to add
@@ -146,7 +145,7 @@ for your function, you should consider creating your own.
 Registering a new BaseSignal subclass
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-To register a new :py:class:`hyperspy.signal.BaseSignal` subclass you must add it to the
+To register a new :class:`~.api.signals.BaseSignal` subclass you must add it to the
 ``hyperspy_extension.yaml`` file, as in the following example:
 
 .. code-block:: yaml
@@ -181,12 +180,18 @@ match for each sort of data.
 
 The optional ``signal_type_aliases`` are used to determine the most appropriate
 signal subclass when using
-:py:meth:`hyperspy.signal.BaseSignal.set_signal_type`.
+:meth:`~.api.signals.BaseSignal.set_signal_type`.
 For example, if the ``signal_type`` ``Electron Energy Loss Spectroscopy``
 has an ``EELS`` alias, setting the signal type to ``EELS`` will correctly assign
 the signal subclass with ``Electron Energy Loss Spectroscopy`` signal type.
 It is good practice to choose a very explicit ``signal_type`` while leaving
 acronyms for ``signal_type_aliases``.
+
+Additionally, the optional key ``hidden: True`` can be defined if a signal should
+be registered with HyperSpy, but not listed by :meth:`hyperspy.api.print_known_signal_types`.
+This option can be used if a signal subclass is needed for certain functionalities,
+such as casting to a different signal subclass, but should usually not be set
+directly by the user.
 
 Creating new HyperSpy model components
 --------------------------------------
@@ -194,7 +199,7 @@ Creating new HyperSpy model components
 When and where to create a new component
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-HyperSpy provides the :py:class:`hyperspy._components.expression.Expression`
+HyperSpy provides the :class:`hyperspy._components.expression.Expression`
 component that enables easy creation of 1D and 2D components from
 mathematical expressions. Therefore, strictly speaking, we only need to
 create new components when they cannot be expressed as simple mathematical
@@ -205,7 +210,7 @@ HyperSpy itself (if they are of common interest) or to specialized external
 packages extending HyperSpy.
 
 The flowchart below can help you decide when and where to add
-a new hyperspy model :py:class:`hyperspy.component.Component`
+a new hyperspy model :class:`hyperspy.component.Component`
 for your function, should you consider creating your own.
 
 ..  This is the original mermaid code. It produces a nicer looking diagram
@@ -277,7 +282,7 @@ Registering new components
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 All new components must be a subclass of
-:py:class:`hyperspy._components.expression.Expression`. To register a new
+:class:`hyperspy._components.expression.Expression`. To register a new
 1D component add  it to the ``hyperspy_extension.yaml`` file as in the following
 example:
 
@@ -319,12 +324,12 @@ Equivalently, to add a new component 2D:
 Creating and registering new widgets and toolkeys
 -------------------------------------------------
 
-To generate GUIs of specific methods and functions, HyperSpy use widgets and
+To generate GUIs of specific methods and functions, HyperSpy uses widgets and
 toolkeys:
 
 * *widgets* (typically ipywidgets or traitsui objects) generate GUIs,
-* *toolkeys* are functions using which it is possible to associate widgets to
-  a signal method or to a module function.
+* *toolkeys* are functions which associate widgets to a signal method 
+  or to a module function.
 
 An extension can declare new toolkeys and widgets. For example, the
 `hyperspy-gui-traitsui <https://github.com/hyperspy/hyperspy_gui_traitsui>`_ and
@@ -335,7 +340,7 @@ Registering toolkeys
 ^^^^^^^^^^^^^^^^^^^^
 To register a new toolkey:
 
-1. Declare a new toolkey, *e. g.* by adding the :py:func:`~.ui_registry.add_gui_method`
+1. Declare a new toolkey, *e. g.* by adding the ``hyperspy.ui_registry.add_gui_method``
    decorator to the function you want to assign a widget to.
 2. Register a new toolkey that you have declared in your package by adding it to
    the ``hyperspy_extension.yaml`` file, as in the following example:
@@ -379,7 +384,7 @@ Integration test suite
 ----------------------
 
 The `integration test suite <https://github.com/hyperspy/hyperspy-extensions-list/actions>`__
-runs the test suite of hyperspy and hyperspy extension on a daily basis against both the
+runs the test suite of HyperSpy and of all registered HyperSpy extensions on a daily basis against both the
 release and development versions. The build matrix is as follows:
 
 .. list-table:: Build matrix of the integration test suite
@@ -418,6 +423,11 @@ The development packages of the dependencies are provided by the
 `scipy-wheels-nightly <https://pypi.anaconda.org/scipy-wheels-nightly/simple>`_
 repository, which provides ``scipy``, ``numpy``, ``scikit-learn`` and ``scikit-image``
 at the time of writing.
-The pre-release packages are obtained from `pypi <https://pypi.org>`_ and these
-will be used for any dependency which provides a pre-release package on pypi.
+The pre-release packages are obtained from `PyPI <https://pypi.org>`_ and these
+will be used for any dependency which provides a pre-release package on PyPI.
+
+A similar `Integration test  <https://github.com/hyperspy/hyperspy/actions/workflows/tests_extension.yml>`__
+workflow can run from pull requests (PR) to the
+`hyperspy <https://github.com/hyperspy/hyperspy>`_ repository when the label
+``run-extension-tests`` is added to a PR or when a PR review is edited.
 

@@ -1,28 +1,25 @@
 # -*- coding: utf-8 -*-
-# Copyright 2007-2021 The HyperSpy developers
+# Copyright 2007-2024 The HyperSpy developers
 #
-# This file is part of  HyperSpy.
+# This file is part of HyperSpy.
 #
-#  HyperSpy is free software: you can redistribute it and/or modify
+# HyperSpy is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-#  HyperSpy is distributed in the hope that it will be useful,
+# HyperSpy is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with  HyperSpy.  If not, see <http://www.gnu.org/licenses/>.
+# along with HyperSpy. If not, see <https://www.gnu.org/licenses/#GPL>.
 
 from hyperspy._components.expression import Expression
-from distutils.version import LooseVersion
-import sympy
 
 
 class Erf(Expression):
-
     r"""Error function component.
 
     .. math::
@@ -41,19 +38,20 @@ class Erf(Expression):
 
     Parameters
     ----------
-        A : float
-            The min/max values of the distribution are -A/2 and A/2.
-        sigma : float
-            Width of the distribution.
-        origin : float
-            Position of the zero crossing.
+    A : float
+        The min/max values of the distribution are -A/2 and A/2.
+    sigma : float
+        Width of the distribution.
+    origin : float
+        Position of the zero crossing.
+    **kwargs
+        Extra keyword arguments are passed to the
+        :class:`~.api.model.components1D.Expression` component.
     """
 
-    def __init__(self, A=1., sigma=1., origin=0., module=["numpy", "scipy"],
-                 **kwargs):
-        if LooseVersion(sympy.__version__) < LooseVersion("1.3"):
-            raise ImportError("The `ErrorFunction` component requires "
-                              "SymPy >= 1.3")
+    def __init__(
+        self, A=1.0, sigma=1.0, origin=0.0, module=["numpy", "scipy"], **kwargs
+    ):
         super().__init__(
             expression="A * erf((x - origin) / sqrt(2) / sigma) / 2",
             name="Erf",
@@ -66,7 +64,7 @@ class Erf(Expression):
         )
 
         # Boundaries
-        self.A.bmin = 0.
+        self.A.bmin = 0.0
 
         self.isbackground = False
         self.convolved = True

@@ -1,38 +1,37 @@
 # -*- coding: utf-8 -*-
-# Copyright 2007-2021 The HyperSpy developers
+# Copyright 2007-2024 The HyperSpy developers
 #
-# This file is part of  HyperSpy.
+# This file is part of HyperSpy.
 #
-#  HyperSpy is free software: you can redistribute it and/or modify
+# HyperSpy is free software: you can redistribute it and/or modify
 # it under the terms of  GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-#  HyperSpy is distributed in the hope that it will be useful,
+# HyperSpy is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with  HyperSpy.  If not, see <http://www.gnu.org/licenses/>.
+# along with HyperSpy. If not, see <https://www.gnu.org/licenses/#GPL>.
 
 import math
+
 import numpy as np
 
-from hyperspy.component import _get_scaling_factor
 from hyperspy._components.expression import Expression
 from hyperspy._components.gaussian import _estimate_gaussian_parameters
-from hyperspy.misc.utils import is_binned # remove in v2.0
+from hyperspy.component import _get_scaling_factor
 
 sqrt2pi = math.sqrt(2 * math.pi)
 
 
-tiny = np.finfo(np.float64).eps
+tiny = np.finfo(float).eps
 
 
 class Doniach(Expression):
-
-    r""" Doniach Sunjic lineshape
+    r"""Doniach Sunjic lineshape component.
 
     .. math::
         :nowrap:
@@ -59,7 +58,7 @@ class Doniach(Expression):
     =============== ===========
 
     Parameters
-    -----------
+    ----------
     A : float
         Height
     sigma : float
@@ -69,9 +68,10 @@ class Doniach(Expression):
     centre : float
         Location of the maximum (peak position).
     **kwargs
-        Extra keyword arguments are passed to the ``Expression`` component.
+        Extra keyword arguments are passed to the
+        :class:`~.api.model.components1D.Expression` component.
 
-    Note
+    Notes
     -----
     This is an asymmetric lineshape, originially design for xps but generally
     useful for fitting peaks with low side tails
@@ -81,11 +81,18 @@ class Doniach(Expression):
 
     """
 
-    def __init__(self, centre=0., A=1., sigma=1., alpha=0.5,
-                 module=["numpy", "scipy"], **kwargs):
+    def __init__(
+        self,
+        centre=0.0,
+        A=1.0,
+        sigma=1.0,
+        alpha=0.5,
+        module="numpy",
+        **kwargs,
+    ):
         super().__init__(
             expression="A*cos(0.5*pi*alpha+\
-            ((1.0 - alpha) * arctan( (x-centre+offset)/sigma) ) )\
+            ((1.0 - alpha) * atan( (x-centre+offset)/sigma) ) )\
             /(sigma**2 + (x-centre+offset)**2)**(0.5 * (1.0 - alpha));\
             offset = 2.354820*sigma / (2 * tan(pi / (2 - alpha)))",
             name="Doniach",
@@ -113,7 +120,7 @@ class Doniach(Expression):
 
         Parameters
         ----------
-        signal : Signal1D instance
+        signal : :class:`~.api.signals.Signal1D`
         x1 : float
             Defines the left limit of the spectral range to use for the
             estimation.
@@ -140,35 +147,33 @@ class Doniach(Expression):
         >>> s.axes_manager[-1].offset = -10
         >>> s.axes_manager[-1].scale = 0.01
         >>> g.estimate_parameters(s, -10, 10, False)
+        True
         """
 
         super()._estimate_parameters(signal)
         axis = signal.axes_manager.signal_axes[0]
-        centre, height, sigma = _estimate_gaussian_parameters(signal, x1, x2,
-                                                              only_current)
+        centre, height, sigma = _estimate_gaussian_parameters(
+            signal, x1, x2, only_current
+        )
         scaling_factor = _get_scaling_factor(signal, axis, centre)
 
         if only_current is True:
             self.centre.value = centre
             self.sigma.value = sigma
             self.A.value = height * 1.3
-            if is_binned(signal):
-            # in v2 replace by
-            #if axis.is_binned:
+            if axis.is_binned:
                 self.A.value /= scaling_factor
             return True
         else:
             if self.A.map is None:
                 self._create_arrays()
-            self.A.map['values'][:] = height * 1.3
-            if is_binned(signal):
-            # in v2 replace by
-            #if axis.is_binned:
-                self.A.map['values'][:] /= scaling_factor
-            self.A.map['is_set'][:] = True
-            self.sigma.map['values'][:] = sigma
-            self.sigma.map['is_set'][:] = True
-            self.centre.map['values'][:] = centre
-            self.centre.map['is_set'][:] = True
+            self.A.map["values"][:] = height * 1.3
+            if axis.is_binned:
+                self.A.map["values"][:] /= scaling_factor
+            self.A.map["is_set"][:] = True
+            self.sigma.map["values"][:] = sigma
+            self.sigma.map["is_set"][:] = True
+            self.centre.map["values"][:] = centre
+            self.centre.map["is_set"][:] = True
             self.fetch_stored_values()
             return True

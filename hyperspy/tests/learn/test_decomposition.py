@@ -1,31 +1,32 @@
 # -*- coding: utf-8 -*-
-# Copyright 2007-2021 The HyperSpy developers
+# Copyright 2007-2024 The HyperSpy developers
 #
-# This file is part of  HyperSpy.
+# This file is part of HyperSpy.
 #
-#  HyperSpy is free software: you can redistribute it and/or modify
+# HyperSpy is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-#  HyperSpy is distributed in the hope that it will be useful,
+# HyperSpy is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with  HyperSpy.  If not, see <http://www.gnu.org/licenses/>.
+# along with HyperSpy. If not, see <https://www.gnu.org/licenses/#GPL>.
 
-from tempfile import TemporaryDirectory
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import numpy as np
 import pytest
 
 from hyperspy import signals
 from hyperspy.decorators import lazifyTestClass
-from hyperspy.exceptions import VisibleDeprecationWarning
 from hyperspy.misc.machine_learning.import_sklearn import sklearn_installed
+
+skip_sklearn = pytest.mark.skipif(not sklearn_installed, reason="sklearn not installed")
 
 
 def generate_low_rank_matrix(m=20, n=100, rank=5, random_seed=123):
@@ -33,7 +34,7 @@ def generate_low_rank_matrix(m=20, n=100, rank=5, random_seed=123):
     rng = np.random.RandomState(random_seed)
     U = rng.randn(m, rank)
     V = rng.randn(n, rank)
-    X = np.abs(U @ V.T)
+    X = abs(U @ V.T)
     X /= np.linalg.norm(X)
     return X
 
@@ -123,6 +124,41 @@ class TestNdAxes:
         # Check that views of the data don't change. See #871
         np.testing.assert_array_equal(s1.inav[0, 0, 0].data, s1n000.data)
 
+    @pytest.mark.parametrize("poisson", [True, False])
+    def test_consistency_masked(self, poisson):
+        s1 = self.s1
+        sig_mask = s1._get_signal_signal(dtype="bool")
+        nav_mask = s1._get_navigation_signal(dtype="bool").T
+        sig_mask.data[:1, :] = True
+        nav_mask.data[:1, :, :] = True
+        s1s = s1.isig[:, 1:]
+        s1n = s1.inav[:, :, 1:]
+        s1sn = s1n.isig[:, 1:]
+        sig_mask_data = sig_mask.data
+        nav_mask_data = nav_mask.data
+        s1.decomposition(poisson, signal_mask=sig_mask)
+        assert sig_mask_data is sig_mask.data
+        s1s.decomposition(poisson)
+        np.testing.assert_array_almost_equal(
+            s1s.learning_results.explained_variance,
+            s1.learning_results.explained_variance,
+        )
+
+        s1.decomposition(poisson, navigation_mask=nav_mask)
+        assert nav_mask_data is nav_mask.data
+        s1n.decomposition(poisson)
+        np.testing.assert_array_almost_equal(
+            s1n.learning_results.explained_variance,
+            s1.learning_results.explained_variance,
+        )
+
+        s1.decomposition(poisson, navigation_mask=nav_mask, signal_mask=sig_mask)
+        s1sn.decomposition(poisson)
+        np.testing.assert_array_almost_equal(
+            s1sn.learning_results.explained_variance,
+            s1.learning_results.explained_variance,
+        )
+
 
 @lazifyTestClass
 class TestGetModel:
@@ -144,7 +180,7 @@ class TestGetModel:
         rms = np.sqrt(((sc.data - s.data) ** 2).sum())
         assert rms < 5e-7
 
-    @pytest.mark.skipif(not sklearn_installed, reason="sklearn not installed")
+    @skip_sklearn
     def test_get_bss_model(self):
         s = self.s
         s.decomposition(algorithm="SVD")
@@ -216,15 +252,17 @@ class TestEstimateElbowPosition:
 
     # Should be removed in scikit-learn 0.26
     # https://scikit-learn.org/dev/whats_new/v0.24.html#sklearn-cross-decomposition
-    @pytest.mark.filterwarnings("ignore:The 'init' value, when 'init=None':FutureWarning")
-    @pytest.mark.skipif(not sklearn_installed, reason="sklearn not installed")
+    @pytest.mark.filterwarnings(
+        "ignore:The 'init' value, when 'init=None':FutureWarning"
+    )
+    @skip_sklearn
     def test_store_number_significant_components(self):
         s = signals.Signal1D(generate_low_rank_matrix())
         s.decomposition()
         assert s.learning_results.number_significant_components == 2
 
         # Check that number_significant_components is reset properly
-        s.decomposition(algorithm="NMF")
+        s.decomposition(algorithm="NMF", max_iter=500)
         assert s.learning_results.number_significant_components is None
 
 
@@ -334,33 +372,18 @@ class TestDecompositionAlgorithm:
     def setup_method(self, method):
         self.s = signals.Signal1D(generate_low_rank_matrix())
 
-    @pytest.mark.parametrize("algorithm", ["SVD", "MLPCA"])
+    @pytest.mark.parametrize("algorithm", ["SVD", "MLPCA", "RPCA"])
     def test_decomposition(self, algorithm):
         self.s.decomposition(algorithm=algorithm, output_dimension=2)
 
-    @pytest.mark.skipif(not sklearn_installed, reason="sklearn not installed")
+    # Warning filter can be removed after scikit-learn >= 0.22
+    # See sklearn.decomposition.sparse_pca.SparsePCA docstring
+    @pytest.mark.filterwarnings("ignore:normalize_components=False:DeprecationWarning")
+    @skip_sklearn
     @pytest.mark.parametrize("algorithm", ["RPCA", "ORPCA", "ORNMF", "MLPCA"])
     def test_decomposition_output_dimension_not_given(self, algorithm):
         with pytest.raises(ValueError, match="`output_dimension` must be specified"):
             self.s.decomposition(algorithm=algorithm, return_info=False)
-
-    @pytest.mark.skipif(not sklearn_installed, reason="sklearn not installed")
-    @pytest.mark.parametrize("algorithm", ["fast_svd", "fast_mlpca"])
-    def test_fast_deprecation_warning(self, algorithm):
-        with pytest.warns(
-            VisibleDeprecationWarning,
-            match="argument `svd_solver='randomized'` instead.",
-        ):
-            self.s.decomposition(algorithm=algorithm, output_dimension=2)
-
-    @pytest.mark.skipif(not sklearn_installed, reason="sklearn not installed")
-    @pytest.mark.parametrize("algorithm", ["RPCA_GoDec", "svd", "mlpca", "nmf",])
-    def test_name_deprecation_warning(self, algorithm):
-        with pytest.warns(
-            VisibleDeprecationWarning,
-            match="has been deprecated and will be removed in HyperSpy 2.0.",
-        ):
-            self.s.decomposition(algorithm=algorithm, output_dimension=2)
 
     def test_algorithm_error(self):
         with pytest.raises(ValueError, match="not recognised. Expected"):
@@ -377,10 +400,10 @@ class TestPrintInfo:
         captured = capfd.readouterr()
         assert "Decomposition info:" in captured.out
 
-    # Should be removed in scikit-learn 0.26
-    # https://scikit-learn.org/dev/whats_new/v0.24.html#sklearn-cross-decomposition
-    @pytest.mark.filterwarnings("ignore:The 'init' value, when 'init=None':FutureWarning")
-    @pytest.mark.skipif(not sklearn_installed, reason="sklearn not installed")
+    # Warning filter can be removed after scikit-learn >= 0.22
+    # See sklearn.decomposition.sparse_pca.SparsePCA docstring
+    @pytest.mark.filterwarnings("ignore:normalize_components=False:DeprecationWarning")
+    @skip_sklearn
     @pytest.mark.parametrize(
         "algorithm", ["sklearn_pca", "NMF", "sparse_pca", "mini_batch_sparse_pca"]
     )
@@ -410,10 +433,10 @@ class TestReturnInfo:
             is None
         )
 
-    # Should be removed in scikit-learn 0.26
-    # https://scikit-learn.org/dev/whats_new/v0.24.html#sklearn-cross-decomposition
-    @pytest.mark.filterwarnings("ignore:The 'init' value, when 'init=None':FutureWarning")
-    @pytest.mark.skipif(not sklearn_installed, reason="sklearn not installed")
+    # Warning filter can be removed after scikit-learn >= 0.22
+    # See sklearn.decomposition.sparse_pca.SparsePCA docstring
+    @pytest.mark.filterwarnings("ignore:normalize_components=False:DeprecationWarning")
+    @skip_sklearn
     @pytest.mark.parametrize("return_info", [True, False])
     @pytest.mark.parametrize(
         "algorithm",
@@ -429,8 +452,8 @@ class TestReturnInfo:
     )
     def test_decomposition_supported(self, algorithm, return_info):
         out = self.s.decomposition(
-                algorithm=algorithm, return_info=return_info, output_dimension=2
-            )
+            algorithm=algorithm, return_info=return_info, output_dimension=2
+        )
         assert (out is not None) is return_info
 
 
@@ -509,17 +532,17 @@ def test_decomposition_reproject(reproject):
     s.decomposition(reproject=reproject)
 
 
-@pytest.mark.skipif(not sklearn_installed, reason="sklearn not installed")
+@skip_sklearn
 @pytest.mark.parametrize("reproject", ["signal", "both"])
 def test_decomposition_reproject_warning(reproject):
     s = signals.Signal1D(generate_low_rank_matrix())
     with pytest.warns(
         UserWarning, match="Reprojecting the signal is not yet supported"
     ):
-        s.decomposition(algorithm="NMF", reproject=reproject)
+        s.decomposition(algorithm="NMF", reproject=reproject, max_iter=500)
 
 
-@pytest.mark.skipif(not sklearn_installed, reason="sklearn not installed")
+@skip_sklearn
 def test_decomposition_pipeline():
     """Tests that a simple sklearn pipeline is an acceptable algorithm."""
     s = signals.Signal1D(generate_low_rank_matrix())
@@ -535,7 +558,7 @@ def test_decomposition_pipeline():
     assert hasattr(out.named_steps["PCA"], "explained_variance_")
 
 
-@pytest.mark.skipif(not sklearn_installed, reason="sklearn not installed")
+@skip_sklearn
 def test_decomposition_gridsearchcv():
     """Tests that a simple sklearn GridSearchCV is an acceptable algorithm."""
     s = signals.Signal1D(generate_low_rank_matrix())
@@ -559,11 +582,6 @@ def test_decomposition_mlpca_var_func():
 def test_decomposition_mlpca_warnings_errors():
     s = signals.Signal1D(generate_low_rank_matrix())
 
-    with pytest.warns(
-        VisibleDeprecationWarning, match="`polyfit` argument has been deprecated"
-    ):
-        s.decomposition(output_dimension=2, algorithm="MLPCA", polyfit=[1, 2, 3])
-
     with pytest.raises(
         ValueError, match="`var_func` and `var_array` cannot both be defined"
     ):
@@ -576,7 +594,9 @@ def test_decomposition_mlpca_warnings_errors():
 
     with pytest.raises(ValueError, match="`var_array` must have the same shape"):
         s.decomposition(
-            output_dimension=2, algorithm="MLPCA", var_array=s.data.copy()[:-3, :-3],
+            output_dimension=2,
+            algorithm="MLPCA",
+            var_array=s.data.copy()[:-3, :-3],
         )
 
     with pytest.raises(
@@ -585,7 +605,8 @@ def test_decomposition_mlpca_warnings_errors():
         s.decomposition(output_dimension=2, algorithm="MLPCA", var_func="func")
 
     with pytest.warns(
-        UserWarning, match="does not make sense to normalize Poisson noise",
+        UserWarning,
+        match="does not make sense to normalize Poisson noise",
     ):
         s.decomposition(
             normalize_poissonian_noise=True, algorithm="MLPCA", output_dimension=2
@@ -631,52 +652,44 @@ def test_centering_error():
     with pytest.raises(ValueError, match="'centre' must be one of"):
         s.decomposition(centre="random")
 
-    for centre in ["variables", "trials"]:
-        with pytest.warns(
-            VisibleDeprecationWarning,
-            match="centre='{}' has been deprecated".format(centre),
-        ):
-            s.decomposition(centre=centre)
 
-
-@pytest.mark.parametrize('mask_as_array', [True, False])
+@pytest.mark.parametrize("mask_as_array", [True, False])
 def test_decomposition_navigation_mask(mask_as_array):
     s = signals.Signal1D(generate_low_rank_matrix())
-    navigation_mask = (s.sum(-1) < 1.5)
+    navigation_mask = s.sum(-1) < 1.5
     if mask_as_array:
         navigation_mask = navigation_mask
     s.decomposition(navigation_mask=navigation_mask)
     data = s.get_decomposition_loadings().inav[0].data
     # Use np.argwhere(np.isnan(data)) to get the indices
-    np.testing.assert_allclose(data[[2, 5, 7, 8, 12, 13, 15, 19]],
-                               np.full(8, np.nan))
+    np.testing.assert_allclose(data[[2, 5, 7, 8, 12, 13, 15, 19]], np.full(8, np.nan))
     assert not np.isnan(s.get_decomposition_factors().data).any()
 
 
-@pytest.mark.parametrize('mask_as_array', [True, False])
+@pytest.mark.parametrize("mask_as_array", [True, False])
 def test_decomposition_signal_mask(mask_as_array):
     s = signals.Signal1D(generate_low_rank_matrix())
-    signal_mask = (s.sum(0) < 0.25)
+    signal_mask = s.sum(0) < 0.25
     if mask_as_array:
         signal_mask = signal_mask.data
     s.decomposition(signal_mask=signal_mask)
     data = s.get_decomposition_factors().inav[0].data
     # Use np.argwhere(np.isnan(data)) to get the indices
-    np.testing.assert_allclose(data[[ 5, 12, 14, 15, 18, 21, 27, 28, 32, 43,
-                                     52, 55, 57, 59, 62, 79, 83]],
-                                np.full(17, np.nan))
+    np.testing.assert_allclose(
+        data[[5, 12, 14, 15, 18, 21, 27, 28, 32, 43, 52, 55, 57, 59, 62, 79, 83]],
+        np.full(17, np.nan),
+    )
     assert not np.isnan(s.get_decomposition_loadings().data).any()
 
 
-@pytest.mark.parametrize('normalise_poissonian_noise', [True, False])
+@pytest.mark.parametrize("normalise_poissonian_noise", [True, False])
 def test_decomposition_mask_all_data(normalise_poissonian_noise):
-    with pytest.raises(ValueError, match='All the data are masked'):
+    with pytest.raises(ValueError, match="All the data are masked"):
         s = signals.Signal1D(generate_low_rank_matrix())
-        signal_mask = (s.sum(0) >= s.sum(0).min())
+        signal_mask = s.sum(0) >= s.sum(0).min()
         s.decomposition(normalise_poissonian_noise, signal_mask=signal_mask)
 
-    with pytest.raises(ValueError, match='All the data are masked'):
+    with pytest.raises(ValueError, match="All the data are masked"):
         s = signals.Signal1D(generate_low_rank_matrix())
-        navigation_mask = (s.sum(-1) >= 0)
-        s.decomposition(normalise_poissonian_noise,
-                        navigation_mask=navigation_mask)
+        navigation_mask = s.sum(-1) >= 0
+        s.decomposition(normalise_poissonian_noise, navigation_mask=navigation_mask)

@@ -1,20 +1,20 @@
 # -*- coding: utf-8 -*-
-# Copyright 2007-2021 The HyperSpy developers
+# Copyright 2007-2024 The HyperSpy developers
 #
-# This file is part of  HyperSpy.
+# This file is part of HyperSpy.
 #
-#  HyperSpy is free software: you can redistribute it and/or modify
+# HyperSpy is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-#  HyperSpy is distributed in the hope that it will be useful,
+# HyperSpy is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with  HyperSpy.  If not, see <http://www.gnu.org/licenses/>.
+# along with HyperSpy. If not, see <https://www.gnu.org/licenses/#GPL>.
 
 import numpy as np
 import pytest
@@ -30,12 +30,7 @@ if import_sklearn.sklearn_installed:
     rng1 = np.random.RandomState(123)
     signal1 = signals.Signal1D(rng1.uniform(size=(7, 5, 7)))
     signal1.decomposition()
-    signal1.blind_source_separation(number_of_components=3)
-
-    rng2 = np.random.RandomState(123)
-    signal2 = signals.Signal2D(rng2.uniform(size=(7, 5, 7)))
-    signal2.decomposition()
-    signal2.blind_source_separation(number_of_components=3)
+    signal1.blind_source_separation(number_of_components=3, max_iter=500)
 else:
     # No need to create the data, since BSS will fail
     # if sklearn is missing, and the pytest.importorskip
@@ -90,7 +85,9 @@ class TestCluster1D:
 
     def test_custom_algorithm(self):
         self.signal.cluster_analysis(
-            "signal", n_clusters=3, preprocessing="norm",
+            "signal",
+            n_clusters=3,
+            preprocessing="norm",
         )
         np.testing.assert_array_equal(
             self.signal.learning_results.cluster_labels.shape, (3, 35)
@@ -120,7 +117,10 @@ class TestCluster1D:
 
 class TestClusterSignalSources:
     def setup_method(self):
-        self.signal = signal2.deepcopy()
+        rng2 = np.random.RandomState(123)
+        s = signals.Signal2D(rng2.uniform(size=(7, 5, 7)))
+        s.decomposition()
+        self.signal = s
         self.navigation_mask = np.zeros((7,), dtype=bool)
         self.navigation_mask[4:6] = True
         self.signal_mask = np.zeros((5, 7), dtype=bool)
@@ -187,7 +187,6 @@ class TestClusterSignalSources:
         )
 
 
-@pytest.mark.filterwarnings("ignore:FastICA did not converge")
 class TestClusterEstimate:
     def setup_method(self):
         rng = np.random.RandomState(123)
@@ -205,7 +204,6 @@ class TestClusterEstimate:
         rng.shuffle(X)
         self.signal = signals.Signal1D(X)
         self.signal.decomposition()
-        self.signal.blind_source_separation(number_of_components=3)
 
     @pytest.mark.parametrize("metric", ("elbow", "silhouette", "gap"))
     def test_metric(self, metric):
@@ -353,7 +351,6 @@ class TestClusterExceptions:
             match="The max number of clusters, max_clusters, "
             "must be specified and be >= 2.",
         ):
-
             self.s.estimate_number_of_clusters(
                 "signal",
                 max_clusters=max_clusters,

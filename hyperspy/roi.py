@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright 2007-2021 The HyperSpy developers
+# Copyright 2007-2024 The HyperSpy developers
 #
 # This file is part of HyperSpy.
 #
@@ -10,80 +10,113 @@
 #
 # HyperSpy is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with HyperSpy.  If not, see <http://www.gnu.org/licenses/>.
+# along with HyperSpy.  If not, see <https://www.gnu.org/licenses/#GPL>.
 
-"""Region of interests (ROIs).
-
-ROIs operate on `BaseSignal` instances and include widgets for interactive
-operation.
+"""
+Region of interests (ROIs) operate on :py:class:`~.api.signals.BaseSignal`
+instances and include widgets for interactive operation.
 
 The following 1D ROIs are available:
 
-    Point1DROI
-        Single element ROI of a 1D signal.
+.. list-table:: 1D ROIs
+   :widths: 25 75
 
-    SpanROI
-        Interval ROI of a 1D signal.
+   * - :class:`~.api.roi.Point1DROI`
+     - Single element ROI of a 1D signal
+   * - :class:`~.api.roi.SpanROI`
+     - Interval ROI of a 1D signal
 
 The following 2D ROIs are available:
 
-    Point2DROI
-        Single element ROI of a 2D signal.
+.. list-table:: 2D ROIs
+   :widths: 25 75
 
-    RectangularROI
-        Rectagular ROI of a 2D signal.
-
-    CircleROI
-        (Hollow) circular ROI of a 2D signal
-
-    Line2DROI
-        Line profile of a 2D signal with customisable width.
+   * - :class:`~.api.roi.Point2DROI`
+     - Single element ROI of a 2D signal
+   * - :class:`~.api.roi.RectangularROI`
+     - Rectagular ROI of a 2D signal
+   * - :class:`~.api.roi.CircleROI`
+     - (Hollow) circular ROI of a 2D signal
+   * - :class:`~.api.roi.Line2DROI`
+     - Line profile of a 2D signal with customisable width
+   * - :class:`~.api.roi.PolygonROI`
+     - Polygonal ROI with a customisable shape.
 
 """
 
 from functools import partial
 
-import traits.api as t
 import numpy as np
+import traits.api as t
 
-from hyperspy.events import Events, Event
-from hyperspy.interactive import interactive
+import hyperspy.api as hs
 from hyperspy.axes import UniformDataAxis
 from hyperspy.drawing import widgets
+from hyperspy.events import Event, Events
+from hyperspy.interactive import interactive
+from hyperspy.misc.utils import is_cupy_array
 from hyperspy.ui_registry import add_gui_method
 
 not_set_error_msg = (
-        "Some ROI parameters have not yet been set. "
-        "Set them before slicing a signal."
-        )
-class BaseROI(t.HasTraits):
+    "Some ROI parameters have not yet been set. " "Set them before slicing a signal."
+)
 
+
+PARSE_AXES_DOCSTRING = """axes : None, str, int or :class:`hyperspy.axes.DataAxis`, default None
+            The axes argument specifies which axes the ROI will be applied on.
+            The axes in the collection can be either of the following:
+
+            * Anything that can index the provided ``axes_manager``.
+            * a tuple or list of:
+
+              - :class:`hyperspy.axes.DataAxis`
+              - anything that can index the provided ``axes_manager``
+
+            * ``None``, it will check whether the widget can be added to the
+              navigator, i.e. if dimensionality matches, and use it if
+              possible, otherwise it will try the signal space. If none of the
+              two attempts work, an error message will be raised.
+"""
+
+
+class BaseROI(t.HasTraits):
     """Base class for all ROIs.
 
-    Provides some basic functionality that is likely to be shared between all
+    Provides some basic functionalities that are likely to be shared between all
     ROIs, and serve as a common type that can be checked for.
+
+    Attributes
+    ----------
+    signal_map : dict
+        Mapping of ``signal``:(``widget``, ``axes``) to keep track to the signals
+        (and corresponding widget/signal axes) on which the ROI has been added.
+        This dictionary is populated in :meth:`BaseInteractiveROI.add_widget`
+    parameters : dict
+        Mapping of parameters name and values for all parameters of the ROI.
     """
 
     def __init__(self):
-        """Sets up events.changed event, and inits HasTraits.
-        """
+        """Sets up events.changed event, and inits HasTraits."""
         super(BaseROI, self).__init__()
         self.events = Events()
-        self.events.changed = Event("""
+        self.events.changed = Event(
+            """
             Event that triggers when the ROI has changed.
 
             What constitues a change varies from ROI to ROI, but in general it
-            should correspond to the region selected by the ROI has changed.
+            should correspond to the region selected by the ROI being changed.
 
-            Arguments:
+            Parameters
             ----------
-                roi :
-                    The ROI that was changed.
-            """, arguments=['roi'])
+            roi :
+                The ROI that was changed.
+            """,
+            arguments=["roi"],
+        )
         self.signal_map = dict()
 
     def __getitem__(self, *args, **kwargs):
@@ -127,9 +160,9 @@ class BaseROI(t.HasTraits):
         """
         Utility to get the value ranges that the ROI would select.
 
-        If the ROI is point base or is rectangluar in nature, these can be used
+        If the ROI is point base or is rectangular in nature, these can be used
         to slice a signal. Extracted from
-        :py:meth:`~hyperspy.roi.BaseROI._make_slices` to ease implementation
+        :meth:`~hyperspy.roi.BaseROI._make_slices` to ease implementation
         in inherited ROIs.
         """
         raise NotImplementedError()
@@ -168,6 +201,7 @@ class BaseROI(t.HasTraits):
                     slices.append(slice(ilow, ihigh))
             else:
                 slices.append(slice(None))
+
         return tuple(slices)
 
     def __call__(self, signal, out=None, axes=None):
@@ -181,17 +215,7 @@ class BaseROI(t.HasTraits):
             If the 'out' argument is supplied, the sliced output will be put
             into this instead of returning a Signal. See Signal.__getitem__()
             for more details on 'out'.
-        axes : specification of axes to use, default = None
-            The axes argument specifies which axes the ROI will be applied on.
-            The items in the collection can be either of the following:
-
-            * a tuple of:
-
-              - DataAxis. These will not be checked with signal.axes_manager.
-              - anything that will index signal.axes_manager
-            * For any other value, it will check whether the navigation
-              space can fit the right number of axis, and use that if it
-              fits. If not, it will try the signal space.
+        %s
         """
         if not self.is_valid():
             raise ValueError(not_set_error_msg)
@@ -206,7 +230,6 @@ class BaseROI(t.HasTraits):
         nav_dim = signal.axes_manager.navigation_dimension
         if True in nav_axes:
             if False in nav_axes:
-
                 slicer = signal.inav[slices[:nav_dim]].isig.__getitem__
                 slices = slices[nav_dim:]
             else:
@@ -217,71 +240,78 @@ class BaseROI(t.HasTraits):
             slices = slices[nav_dim:]
 
         roi = slicer(slices, out=out)
+
         return roi
+
+    __call__.__doc__ %= PARSE_AXES_DOCSTRING
 
     def _parse_axes(self, axes, axes_manager):
         """Utility function to parse the 'axes' argument to a list of
-        :py:class:`~hyperspy.axes.DataAxis`.
+        :class:`~hyperspy.axes.DataAxis`.
 
         Parameters
         ----------
-        axes : specification of axes to use
-            The axes argument specifies which axes the ROI will be applied on.
-            The axes in the collection can be either of the following:
-
-            * a tuple of:
-
-              * :py:class:`~hyperspy.axes.DataAxis`. These will not be checked
-                with signal.axes_manager.
-              * anything that will index the signal
-                :py:class:`~hyperspy.axes.AxesManager`
-            * For any other value, it will check whether the navigation
-              space can fit the right number of axis, and use that if it
-              fits. If not, it will try the signal space.
-        axes_manager : :py:class:`~hyperspy.axes.AxesManager`
-            The AxesManager to use for parsing axes, if axes is not already a
-            tuple of DataAxis.
+        %s
+        axes_manager : :class:`~hyperspy.axes.AxesManager`
+            The AxesManager to use for parsing axes
 
         Returns
         -------
-        :py:class:`~hyperspy.axes.DataAxis`
+        tuple of :class:`~hyperspy.axes.DataAxis`
         """
         nd = self.ndim
-        if isinstance(axes, (tuple, list)):
-            axes_out = axes_manager[axes[:nd]]
-        else:
+        if axes is None:
             if axes_manager.navigation_dimension >= nd:
                 axes_out = axes_manager.navigation_axes[:nd]
             elif axes_manager.signal_dimension >= nd:
                 axes_out = axes_manager.signal_axes[:nd]
-            elif nd == 2 and axes_manager.navigation_dimension == 1 and \
-                    axes_manager.signal_dimension == 1:
+            elif (
+                nd == 2
+                and axes_manager.navigation_dimension == 1
+                and axes_manager.signal_dimension == 1
+            ):
                 # We probably have a navigator plot including both nav and sig
                 # axes.
-                axes_out = [axes_manager.signal_axes[0],
-                            axes_manager.navigation_axes[0]]
+                axes_out = (
+                    axes_manager.signal_axes[0],
+                    axes_manager.navigation_axes[0],
+                )
             else:
                 raise ValueError("Could not find valid axes configuration.")
+        else:
+            if isinstance(axes, (tuple, list)) and len(axes) > nd:
+                raise ValueError(
+                    "The length of the provided `axes` is larger "
+                    "than the dimensionality of the ROI."
+                )
+            axes_out = axes_manager[axes]
+
+        if not isinstance(axes_out, tuple):
+            axes_out = (axes_out,)
 
         return axes_out
 
+    _parse_axes.__doc__ %= PARSE_AXES_DOCSTRING
+
+
 def _get_mpl_ax(plot, axes):
     """
-    Returns MPL Axes that contains the `axes`.
+    Returns matplotlib Axes that contains the hyperspy axis.
 
     The space of the first DataAxis in axes will be used to determine which
-    plot's matplotlib Axes to return.
+    plot's :class:`matplotlib.axes.Axes` to return.
 
     Parameters
     ----------
     plot : MPL_HyperExplorer
-        The explorer that contains the navigation and signal plots
+        The explorer that contains the navigation and signal plots.
     axes : collection of DataAxis
         The axes to infer from.
     """
     if not plot.is_active:
-        raise RuntimeError("The signal needs to be plotted before using this "
-                           "function.")
+        raise RuntimeError(
+            "The signal needs to be plotted before using this " "function."
+        )
 
     if axes[0].navigate:
         ax = plot.navigator_plot.ax
@@ -294,10 +324,9 @@ def _get_mpl_ax(plot, axes):
 
 
 class BaseInteractiveROI(BaseROI):
-
     """Base class for interactive ROIs, i.e. ROIs with widget interaction.
     The base class defines a lot of the common code for interacting with
-    widgets, but inhertors need to implement the following functions:
+    widgets, but inheritors need to implement the following functions:
 
     _get_widget_type()
     _apply_roi2widget(widget)
@@ -324,8 +353,8 @@ class BaseInteractiveROI(BaseROI):
         """Internal function for updating the associated widgets to the
         geometry contained in the ROI.
 
-        Arguments
-        ---------
+        Parameters
+        ----------
         exclude : set()
             A set of widgets to exclude from the update. Useful e.g. if a
             widget has triggered a change in the ROI: Then all widgets,
@@ -366,67 +395,83 @@ class BaseInteractiveROI(BaseROI):
         """
         raise NotImplementedError()
 
-    def interactive(self, signal, navigation_signal="same", out=None,
-                    color="green", snap=True, **kwargs):
+    def interactive(
+        self,
+        signal,
+        navigation_signal="same",
+        out=None,
+        color="green",
+        snap=True,
+        **kwargs,
+    ):
         """Creates an interactively sliced Signal (sliced by this ROI) via
-        hyperspy.interactive.
+        :func:`~hyperspy.api.interactive`.
 
-        Arguments
-        ---------
-        signal : Signal
-            The source signal to slice
-        navigation_signal : Signal, None or "same" (default)
+        Parameters
+        ----------
+        signal : hyperspy.api.signals.BaseSignal (or subclass)
+            The source signal to slice.
+        navigation_signal : hyperspy.api.signals.BaseSignal (or subclass), None or "same" (default)
             The signal the ROI will be added to, for navigation purposes
             only. Only the source signal will be sliced.
             If not None, it will automatically create a widget on
-            navigation_signal. Passing "same" is identical to passing the
-            same signal to 'signal' and 'navigation_signal', but is less
+            navigation_signal. Passing ``"same"`` is identical to passing the
+            same signal to ``"signal"`` and ``"navigation_signal"``, but is less
             ambigous, and allows "same" to be the default value.
-        out : Signal
+        out : hyperspy.api.signals.BaseSignal (or subclass)
             If not None, it will use 'out' as the output instead of
             returning a new Signal.
-        color : Matplotlib color specifier (default: 'green')
-            The color for the widget. Any format that matplotlib uses should
-            be ok. This will not change the color fo any widget passed with
-            the 'widget' argument.
-        snap : bool, optional
-            If True, the ROI will be snapped to the axes values. Default is
-            True.
+        color : matplotlib color, default: ``'green'``
+            The color for the widget. Any format that matplotlib uses should be
+            ok. This will not change the color for any widget passed with the
+            'widget' argument.
+        snap : bool, default True
+            If True, the ROI will be snapped to the axes values.
         **kwargs
-            All kwargs are passed to the roi __call__ method which is called
-            interactively on any roi parameter change.
+            All kwargs are passed to the roi ``__call__`` method which is
+            called interactively on any roi parameter change.
+
+        Returns
+        -------
+        :class:`~hyperspy.api.signals.BaseSignal` (or subclass)
+            Signal updated with the current ROI selection
+            when the ROI is changed.
 
         """
-        if hasattr(signal, '_plot_kwargs'):
-            kwargs.update({'_plot_kwargs': signal._plot_kwargs})
+        if hasattr(signal, "_plot_kwargs"):
+            kwargs.update({"_plot_kwargs": signal._plot_kwargs})
             # in case of complex signal, it is possible to shift the signal
             # during plotting, if so this is currently not supported and we
             # raise a NotImplementedError
-            if signal._plot.signal_data_function_kwargs.get(
-                    'fft_shift', False):
-                raise NotImplementedError('ROIs are not supported when data '
-                                          'are shifted during plotting.')
+            if signal._plot.signal_data_function_kwargs.get("fft_shift", False):
+                raise NotImplementedError(
+                    "ROIs are not supported when data " "are shifted during plotting."
+                )
 
         if isinstance(navigation_signal, str) and navigation_signal == "same":
             navigation_signal = signal
         if navigation_signal is not None:
             if navigation_signal not in self.signal_map:
-                self.add_widget(navigation_signal, color=color, snap=snap,
-                                axes=kwargs.get("axes", None))
-        if (self.update not in
-                signal.axes_manager.events.any_axis_changed.connected):
-            signal.axes_manager.events.any_axis_changed.connect(
-                self.update,
-                [])
+                self.add_widget(
+                    navigation_signal,
+                    color=color,
+                    snap=snap,
+                    axes=kwargs.get("axes", None),
+                )
+        if self.update not in signal.axes_manager.events.any_axis_changed.connected:
+            signal.axes_manager.events.any_axis_changed.connect(self.update, [])
         if out is None:
-            return interactive(self.__call__,
-                               event=self.events.changed,
-                               signal=signal,
-                               **kwargs)
+            return interactive(
+                self.__call__, event=self.events.changed, signal=signal, **kwargs
+            )
         else:
-            return interactive(self.__call__,
-                               event=self.events.changed,
-                               signal=signal, out=out, **kwargs)
+            return interactive(
+                self.__call__,
+                event=self.events.changed,
+                signal=signal,
+                out=out,
+                **kwargs,
+            )
 
     def _on_widget_change(self, widget):
         """Callback for widgets' 'changed' event. Updates the internal state
@@ -444,89 +489,94 @@ class BaseInteractiveROI(BaseROI):
         self._update_widgets(exclude=(widget,))
         self.events.changed.trigger(self)
 
-    def add_widget(self, signal, axes=None, widget=None, color='green',
-                   snap=True, **kwargs):
+    def add_widget(
+        self, signal, axes=None, widget=None, color="green", snap=None, **kwargs
+    ):
         """Add a widget to visually represent the ROI, and connect it so any
         changes in either are reflected in the other. Note that only one
         widget can be added per signal/axes combination.
 
-        Arguments
-        ---------
-        signal : Signal
+        Parameters
+        ----------
+        signal : hyperspy.api.signals.BaseSignal (or subclass)
             The signal to which the widget is added. This is used to determine
             which plot to add the widget to, and it supplies the axes_manager
             for the widget.
-        axes : specification of axes to use, default = None
-            The axes argument specifies which axes the ROI will be applied on.
-            The DataAxis in the collection can be either of the following:
-
-            * a tuple of:
-
-                - DataAxis. These will not be checked with signal.axes_manager.
-                - anything that will index signal.axes_manager
-
-            * For any other value, it will check whether the navigation
-              space can fit the right number of axis, and use that if it
-              fits. If not, it will try the signal space.
-
-        widget : Widget or None (default)
+        %s
+        widget : hyperspy widget or None, default None
             If specified, this is the widget that will be added. If None, the
-            default widget will be used, as given by _get_widget_type().
-        color : Matplotlib color specifier (default: 'green')
+            default widget will be used.
+        color : matplotlib color, default ``'green'``
             The color for the widget. Any format that matplotlib uses should be
-            ok. This will not change the color fo any widget passed with the
-            'widget' argument.
-        snap : bool, optional
-            If True, the ROI will be snapped to the axes values. Default is
-            True.
-        kwargs:
-            All keyword argument are passed to the widget constructor.
+            ok. This will not change the color for any widget passed with the
+            ``'widget'`` argument.
+        snap : bool or None, default None
+            If True, the ROI will be snapped to the axes values, non-uniform
+            axes are not supported. If None, it will be disabled (set to
+            ``False``) for signals containing non-uniform axes.
+        **kwargs : dict
+            All keyword arguments are passed to the widget constructor.
+
+        Returns
+        -------
+        hyperspy widget
+            The widget of the ROI.
         """
 
-        axes = self._parse_axes(axes, signal.axes_manager,)
+        axes = self._parse_axes(
+            axes,
+            signal.axes_manager,
+        )
 
         # Undefined if roi initialised without specifying parameters
         if t.Undefined in tuple(self):
             self._set_default_values(signal, axes=axes)
 
+        if signal._plot is None or signal._plot.signal_plot is None:
+            raise RuntimeError(
+                f"{repr(signal)} does not have an active plot. Plot the "
+                "signal before calling this method."
+            )
+
         if widget is None:
-            widget = self._get_widget_type(
-                axes, signal)(
-                signal.axes_manager, **kwargs)
+            widget = self._get_widget_type(axes, signal)(signal.axes_manager, **kwargs)
             widget.color = color
 
         # Remove existing ROI, if it exists and axes match
-        if signal in self.signal_map and \
-                self.signal_map[signal][1] == axes:
+        if signal in self.signal_map and self.signal_map[signal][1] == axes:
             self.remove_widget(signal)
+
+        if widget.ax is None:
+            ax = _get_mpl_ax(signal._plot, axes)
+            widget.set_mpl_ax(ax)
 
         # Set DataAxes
         widget.axes = axes
         with widget.events.changed.suppress_callback(self._on_widget_change):
             self._apply_roi2widget(widget)
+
+            if snap is None:
+                if any(not axis.is_uniform for axis in axes):
+                    # Disable snapping for non-uniform axes
+                    snap = False
+                else:
+                    snap = True
+
             # We need to snap after the widget value have been set
-            if hasattr(widget, 'snap_all'):
+            if hasattr(widget, "snap_all"):
                 widget.snap_all = snap
             else:
                 widget.snap_position = snap
 
-        if widget.ax is None:
-            if signal._plot is None or signal._plot.signal_plot is None:
-                raise Exception(
-                    f"{repr(signal)} does not have an active plot. Plot the "
-                    "signal before calling this method.")
-
-            ax = _get_mpl_ax(signal._plot, axes)
-            widget.set_mpl_ax(ax)
-
         # Connect widget changes to on_widget_change
-        widget.events.changed.connect(self._on_widget_change,
-                                      {'obj': 'widget'})
+        widget.events.changed.connect(self._on_widget_change, {"obj": "widget"})
         # When widget closes, remove from internal list
-        widget.events.closed.connect(self._remove_widget, {'obj': 'widget'})
+        widget.events.closed.connect(self._remove_widget, {"obj": "widget"})
         self.widgets.add(widget)
         self.signal_map[signal] = (widget, axes)
         return widget
+
+    add_widget.__doc__ %= PARSE_AXES_DOCSTRING
 
     def _remove_widget(self, widget, render_figure=True):
         widget.events.closed.disconnect(self._remove_widget)
@@ -538,37 +588,38 @@ class BaseInteractiveROI(BaseROI):
                 break
             # disconnect events which has been added when
             if self.update in signal.axes_manager.events.any_axis_changed.connected:
-                signal.axes_manager.events.any_axis_changed.disconnect(
-                    self.update)
+                signal.axes_manager.events.any_axis_changed.disconnect(self.update)
 
-    def remove_widget(self, signal, render_figure=True):
+    def remove_widget(self, signal=None, render_figure=True):
         """
-        Removing a widget from a signal consists in two tasks:
-            1. Disconnect the interactive operations associated with this ROI
-               and the specified signal `signal`.
-            2. Removing the widget from the plot.
+        Removing a widget from a signal consists of two tasks:
+
+        1. Disconnect the interactive operations associated with this ROI
+           and the specified signal ``signal``.
+        2. Removing the widget from the plot.
 
         Parameters
         ----------
-        signal : BaseSignal
-            The signal from the which the interactive operations will be
-            disconnected.
-        render_figure : bool, optional
+        signal : hyperspy.api.signals.BaseSignal (or subclass)
+            The signal from which the interactive operations will be
+            disconnected. If None, remove from all signals.
+        render_figure : bool, default True
             If False, the figure will not be rendered after removing the widget
-            in order to save redraw events. The default is True.
-
-        Returns
-        -------
-        None.
+            in order to save redraw events.
 
         """
-        if signal in self.signal_map:
-            w = self.signal_map.pop(signal)[0]
-            self._remove_widget(w, render_figure)
+        if signal is None:
+            signal = list(self.signal_map.keys())
+        elif isinstance(signal, hs.signals.BaseSignal):
+            signal = [signal]
+
+        for s in signal:
+            if s in self.signal_map:
+                w = self.signal_map.pop(s)[0]
+                self._remove_widget(w, render_figure)
 
 
 class BasePointROI(BaseInteractiveROI):
-
     """Base ROI class for point ROIs, i.e. ROIs with a unit size in each of its
     dimensions.
     """
@@ -578,9 +629,9 @@ class BasePointROI(BaseInteractiveROI):
             axes = self.signal_map[signal][1]
         else:
             axes = self._parse_axes(axes, signal.axes_manager)
-        s = super(BasePointROI, self).__call__(signal=signal, out=out,
-                                               axes=axes)
+        s = super(BasePointROI, self).__call__(signal=signal, out=out, axes=axes)
         return s
+
 
 def guess_vertical_or_horizontal(axes, signal):
     # Figure out whether to use horizontal or vertical line:
@@ -595,27 +646,26 @@ def guess_vertical_or_horizontal(axes, signal):
 
     if plotdim == 2:  # Plot is an image
         # axdim == 1 and plotdim == 2 indicates "spectrum stack"
-        if idx == 0 and axdim != 1:    # Axis is horizontal
+        if idx == 0 and axdim != 1:  # Axis is horizontal
             return "vertical"
         else:  # Axis is vertical
             return "horizontal"
     elif plotdim == 1:  # It is a spectrum
         return "vertical"
     else:
-        raise ValueError(
-            "Could not find valid widget type for the given `axes` value")
+        raise ValueError("Could not find valid widget type for the given `axes` value")
+
 
 @add_gui_method(toolkey="hyperspy.Point1DROI")
 class Point1DROI(BasePointROI):
-
     """Selects a single point in a 1D space. The coordinate of the point in the
     1D space is stored in the 'value' trait.
 
-    `Point1DROI` can be used in place of a tuple containing the value of `value`.
+    ``Point1DROI`` can be used in place of a tuple containing the value of ``value``.
 
 
-    Example
-    -------
+    Examples
+    --------
 
     >>> roi = hs.roi.Point1DROI(0.5)
     >>> value, = roi
@@ -623,6 +673,7 @@ class Point1DROI(BasePointROI):
     0.5
 
     """
+
     value = t.CFloat(t.Undefined)
     _ndim = 1
 
@@ -635,11 +686,11 @@ class Point1DROI(BasePointROI):
         if axes is None:
             axes = self._parse_axes(None, signal.axes_manager)
         # If roi parameters are undefined, use center of axes
-        self.value = axes[0]._parse_value('rel0.5')
+        self.value = axes[0]._parse_value("rel0.5")
 
     @property
     def parameters(self):
-        return {"value" : self.value}
+        return {"value": self.value}
 
     def _value_changed(self, old, new):
         self.update()
@@ -666,31 +717,29 @@ class Point1DROI(BasePointROI):
 
 @add_gui_method(toolkey="hyperspy.Point2DROI")
 class Point2DROI(BasePointROI):
-
     """Selects a single point in a 2D space. The coordinates of the point in
-    the 2D space are stored in the traits 'x' and 'y'.
+    the 2D space are stored in the traits ``'x'`` and ``'y'``.
 
-    `Point2DROI` can be used in place of a tuple containing the coordinates
-    of the point `(x, y)`.
+    ``Point2DROI`` can be used in place of a tuple containing the coordinates
+    of the point (x, y).
 
 
-    Example
-    -------
+    Examples
+    --------
 
     >>> roi = hs.roi.Point2DROI(3, 5)
     >>> x, y = roi
     >>> print(x, y)
-    3 5
+    3.0 5.0
 
     """
+
     x, y = (t.CFloat(t.Undefined),) * 2
     _ndim = 2
 
     def __init__(self, x=None, y=None):
         super().__init__()
-        x, y = (
-            para if para is not None
-            else t.Undefined for para in (x, y))
+        x, y = (para if para is not None else t.Undefined for para in (x, y))
 
         self.x, self.y = x, y
 
@@ -703,7 +752,7 @@ class Point2DROI(BasePointROI):
 
     @property
     def parameters(self):
-        return {"x":self.x, "y":self.y}
+        return {"x": self.x, "y": self.y}
 
     def _x_changed(self, old, new):
         self.update()
@@ -712,7 +761,10 @@ class Point2DROI(BasePointROI):
         self.update()
 
     def _get_ranges(self):
-        ranges = ((self.x,), (self.y,),)
+        ranges = (
+            (self.x,),
+            (self.y,),
+        )
         return ranges
 
     def _set_from_widget(self, widget):
@@ -727,32 +779,32 @@ class Point2DROI(BasePointROI):
 
 @add_gui_method(toolkey="hyperspy.SpanROI")
 class SpanROI(BaseInteractiveROI):
-
     """Selects a range in a 1D space. The coordinates of the range in
-    the 1D space are stored in the traits 'left' and 'right'.
+    the 1D space are stored in the traits ``'left'`` and ``'right'``.
 
-    `SpanROI` can be used in place of a tuple containing the left and right values.
+    ``SpanROI`` can be used in place of a tuple containing the left and right values.
 
-    Example
-    -------
+    Examples
+    --------
 
     >>> roi = hs.roi.SpanROI(-3, 5)
     >>> left, right = roi
     >>> print(left, right)
-    3 5
+    -3.0 5.0
 
     """
+
     left, right = (t.CFloat(t.Undefined),) * 2
     _ndim = 1
 
     def __init__(self, left=None, right=None):
         super().__init__()
-        self._bounds_check = True   # Use responsibly!
+        self._bounds_check = True  # Use responsibly!
         if left is not None and right is not None and left >= right:
             raise ValueError(f"`left` ({left}) must be smaller than `right` ({right}).")
         left, right = (
-            para if para is not None
-            else t.Undefined for para in (left, right))
+            para if para is not None else t.Undefined for para in (left, right)
+        )
         self.left, self.right = left, right
 
     def _set_default_values(self, signal, axes=None):
@@ -763,22 +815,19 @@ class SpanROI(BaseInteractiveROI):
 
     @property
     def parameters(self):
-        return {"left":self.left, "right":self.right}
+        return {"left": self.left, "right": self.right}
 
     def is_valid(self):
-        return (t.Undefined not in tuple(self) and
-                self.right >= self.left)
+        return t.Undefined not in tuple(self) and self.right >= self.left
 
     def _right_changed(self, old, new):
-        if self._bounds_check and \
-                self.left is not t.Undefined and new <= self.left:
+        if self._bounds_check and self.left is not t.Undefined and new <= self.left:
             self.right = old
         else:
             self.update()
 
     def _left_changed(self, old, new):
-        if self._bounds_check and \
-                self.right is not t.Undefined and new >= self.right:
+        if self._bounds_check and self.right is not t.Undefined and new >= self.right:
             self.left = old
         else:
             self.update()
@@ -792,7 +841,8 @@ class SpanROI(BaseInteractiveROI):
         self.left, self.right = value
 
     def _apply_roi2widget(self, widget):
-        widget.set_bounds(left=self.left, right=self.right)
+        if widget.span is not None:
+            widget._set_span_extents(self.left, self.right)
 
     def _get_widget_type(self, axes, signal):
         direction = guess_vertical_or_horizontal(axes=axes, signal=signal)
@@ -804,34 +854,34 @@ class SpanROI(BaseInteractiveROI):
             raise ValueError("direction must be either horizontal or vertical")
 
 
-
 @add_gui_method(toolkey="hyperspy.RectangularROI")
 class RectangularROI(BaseInteractiveROI):
-
     """Selects a range in a 2D space. The coordinates of the range in
-    the 2D space are stored in the traits 'left', 'right', 'top' and 'bottom'.
-    Convenience properties 'x', 'y', 'width' and 'height' are also available,
+    the 2D space are stored in the traits ``'left'``, ``'right'``, ``'top'`` and ``'bottom'``.
+    Convenience properties ``'x'``, ``'y'``, ``'width'`` and ``'height'`` are also available,
     but cannot be used for initialization.
 
-    `RectangularROI` can be used in place of a tuple containing `(left, right, top, bottom)`.
+    ``RectangularROI`` can be used in place of a tuple containing (left, right, top, bottom).
 
-    Example
-    -------
+    Examples
+    --------
 
     >>> roi = hs.roi.RectangularROI(left=0, right=10, top=20, bottom=20.5)
     >>> left, right, top, bottom = roi
     >>> print(left, right, top, bottom)
-    0 10 20 20.5
+    0.0 10.0 20.0 20.5
     """
+
     top, bottom, left, right = (t.CFloat(t.Undefined),) * 4
     _ndim = 2
 
     def __init__(self, left=None, top=None, right=None, bottom=None):
         super(RectangularROI, self).__init__()
-        left, top, right, bottom  = (
-            para if para is not None
-            else t.Undefined for para in (left, top, right, bottom))
-        self._bounds_check = True   # Use reponsibly!
+        left, top, right, bottom = (
+            para if para is not None else t.Undefined
+            for para in (left, top, right, bottom)
+        )
+        self._bounds_check = True  # Use reponsibly!
         self.left, self.top, self.right, self.bottom = left, top, right, bottom
 
     def __getitem__(self, *args, **kwargs):
@@ -854,15 +904,22 @@ class RectangularROI(BaseInteractiveROI):
 
     @property
     def parameters(self):
-        return {"left":self.left, "top":self.top, "right":self.right, "bottom":self.bottom}
+        return {
+            "left": self.left,
+            "top": self.top,
+            "right": self.right,
+            "bottom": self.bottom,
+        }
 
     def is_valid(self):
-        return (not t.Undefined in tuple(self) and
-                self.right >= self.left and self.bottom >= self.top)
+        return (
+            t.Undefined not in tuple(self)
+            and self.right >= self.left
+            and self.bottom >= self.top
+        )
 
     def _top_changed(self, old, new):
-        if self._bounds_check and \
-                self.bottom is not t.Undefined and new >= self.bottom:
+        if self._bounds_check and self.bottom is not t.Undefined and new >= self.bottom:
             self.top = old
         else:
             self.update()
@@ -932,28 +989,28 @@ class RectangularROI(BaseInteractiveROI):
                 self.update()
 
     def _bottom_changed(self, old, new):
-        if self._bounds_check and \
-                self.top is not t.Undefined and new <= self.top:
+        if self._bounds_check and self.top is not t.Undefined and new <= self.top:
             self.bottom = old
         else:
             self.update()
 
     def _right_changed(self, old, new):
-        if self._bounds_check and \
-                self.left is not t.Undefined and new <= self.left:
+        if self._bounds_check and self.left is not t.Undefined and new <= self.left:
             self.right = old
         else:
             self.update()
 
     def _left_changed(self, old, new):
-        if self._bounds_check and \
-                self.right is not t.Undefined and new >= self.right:
+        if self._bounds_check and self.right is not t.Undefined and new >= self.right:
             self.left = old
         else:
             self.update()
 
     def _get_ranges(self):
-        ranges = ((self.left, self.right), (self.top, self.bottom),)
+        ranges = (
+            (self.left, self.right),
+            (self.top, self.bottom),
+        )
         return ranges
 
     def _set_from_widget(self, widget):
@@ -962,8 +1019,9 @@ class RectangularROI(BaseInteractiveROI):
         (self.left, self.top), (self.right, self.bottom) = (p, p + s)
 
     def _apply_roi2widget(self, widget):
-        widget.set_bounds(left=self.left, bottom=self.bottom,
-                          right=self.right, top=self.top)
+        widget.set_bounds(
+            left=self.left, bottom=self.bottom, right=self.right, top=self.top
+        )
 
     def _get_widget_type(self, axes, signal):
         return widgets.RectangleWidget
@@ -972,23 +1030,21 @@ class RectangularROI(BaseInteractiveROI):
 @add_gui_method(toolkey="hyperspy.CircleROI")
 class CircleROI(BaseInteractiveROI):
     """Selects a circular or annular region in a 2D space. The coordinates of
-    the center of the circle are stored in the 'cx' and 'cy' parameters and the
-    radius in the `r` parameter. If an internal radius is defined using the
-    `r_inner` parameter, then an annular region is selected instead.
+    the center of the circle are stored in the 'cx' and 'cy' attributes. The
+    radius in the `r` attribute. If an internal radius is defined using the
+    `r_inner` attribute, then an annular region is selected instead.
     `CircleROI` can be used in place of a tuple containing `(cx, cy, r)`, `(cx,
     cy, r, r_inner)` when `r_inner` is not `None`.
     """
 
-    cx, cy, r, r_inner = (t.CFloat(t.Undefined),) * 3 + (t.CFloat(0.),)
+    cx, cy, r, r_inner = (t.CFloat(t.Undefined),) * 3 + (t.CFloat(0.0),)
     _ndim = 2
 
     def __init__(self, cx=None, cy=None, r=None, r_inner=0):
         super(CircleROI, self).__init__()
-        cx, cy, r = (
-            para if para is not None
-            else t.Undefined for para in (cx, cy, r))
+        cx, cy, r = (para if para is not None else t.Undefined for para in (cx, cy, r))
 
-        self._bounds_check = True   # Use reponsibly!
+        self._bounds_check = True  # Use reponsibly!
         self.cx, self.cy, self.r, self.r_inner = cx, cy, r, r_inner
 
     def _set_default_values(self, signal, axes=None):
@@ -997,27 +1053,19 @@ class CircleROI(BaseInteractiveROI):
         ax0, ax1 = axes
 
         # If roi parameters are undefined, use center of axes
-        self.cx = ax0._parse_value('rel0.5')
-        self.cy = ax1._parse_value('rel0.5')
+        self.cx = ax0._parse_value("rel0.5")
+        self.cy = ax1._parse_value("rel0.5")
 
-        rx = (ax0.high_value - ax0.low_value)/2
-        ry = (ax1.high_value - ax1.low_value)/2
-        self.r = min(rx,ry)
+        rx = (ax0.high_value - ax0.low_value) / 2
+        ry = (ax1.high_value - ax1.low_value) / 2
+        self.r = min(rx, ry)
 
     @property
     def parameters(self):
-        return {
-            "cx":self.cx,
-            "cy":self.cy,
-            "r": self.r,
-            "r_inner": self.r_inner
-            }
+        return {"cx": self.cx, "cy": self.cy, "r": self.r, "r_inner": self.r_inner}
 
     def is_valid(self):
-        return (
-            t.Undefined not in tuple(self)
-            and self.r >= self.r_inner
-            )
+        return t.Undefined not in tuple(self) and self.r >= self.r_inner
 
     def _cx_changed(self, old, new):
         self.update()
@@ -1032,8 +1080,7 @@ class CircleROI(BaseInteractiveROI):
             self.update()
 
     def _r_inner_changed(self, old, new):
-        if self._bounds_check and \
-                self.r is not t.Undefined and new >= self.r:
+        if self._bounds_check and self.r is not t.Undefined and new >= self.r:
             self.r_inner = old
         else:
             self.update()
@@ -1053,48 +1100,36 @@ class CircleROI(BaseInteractiveROI):
         return widgets.CircleWidget
 
     def __call__(self, signal, out=None, axes=None):
-        """Slice the signal according to the ROI, and return it.
-
-        Arguments
-        ---------
-        signal : Signal
-            The signal to slice with the ROI.
-        out : Signal, default = None
-            If the 'out' argument is supplied, the sliced output will be put
-            into this instead of returning a Signal. See Signal.__getitem__()
-            for more details on 'out'.
-        axes : specification of axes to use, default = None
-            The axes argument specifies which axes the ROI will be applied on.
-            The items in the collection can be either of the following:
-                * a tuple of:
-                    - DataAxis. These will not be checked with
-                      signal.axes_manager.
-                    - anything that will index signal.axes_manager
-                * For any other value, it will check whether the navigation
-                  space can fit the right number of axis, and use that if it
-                  fits. If not, it will try the signal space.
-        """
         if not self.is_valid():
             raise ValueError(not_set_error_msg)
+
         if axes is None and signal in self.signal_map:
             axes = self.signal_map[signal][1]
         else:
             axes = self._parse_axes(axes, signal.axes_manager)
+
         for axis in axes:
             if not axis.is_uniform:
                 raise NotImplementedError(
-                        "This ROI cannot operate on a non-uniform axis.")
+                    "This ROI cannot operate on a non-uniform axis."
+                )
         natax = signal.axes_manager._get_axes_in_natural_order()
         # Slice original data with a circumscribed rectangle
         cx = self.cx + 0.5001 * axes[0].scale
         cy = self.cy + 0.5001 * axes[1].scale
-        ranges = [[cx - self.r, cx + self.r],
-                  [cy - self.r, cy + self.r]]
+        ranges = [[cx - self.r, cx + self.r], [cy - self.r, cy + self.r]]
         slices = self._make_slices(natax, axes, ranges)
-        ir = [slices[natax.index(axes[0])],
-              slices[natax.index(axes[1])]]
+        ir = [slices[natax.index(axes[0])], slices[natax.index(axes[1])]]
+
         vx = axes[0].axis[ir[0]] - cx
         vy = axes[1].axis[ir[1]] - cy
+
+        # convert to cupy array when necessary
+        if is_cupy_array(signal.data):
+            import cupy as cp
+
+            vx, vy = cp.array(vx), cp.array(vy)
+
         gx, gy = np.meshgrid(vx, vy)
         gr = gx**2 + gy**2
         mask = gr > self.r**2
@@ -1122,7 +1157,6 @@ class CircleROI(BaseInteractiveROI):
         nav_dim = signal.axes_manager.navigation_dimension
         if True in nav_axes:
             if False in nav_axes:
-
                 slicer = signal.inav[slices[:nav_dim]].isig.__getitem__
                 slices = slices[nav_dim:]
             else:
@@ -1136,13 +1170,11 @@ class CircleROI(BaseInteractiveROI):
         roi = out or roi
         if roi._lazy:
             import dask.array as da
+
             mask = da.from_array(mask, chunks=chunks)
-            mask = da.broadcast_to(mask, tiles)
-            # By default promotes dtype to float if required
-            roi.data = da.where(mask, np.nan, roi.data)
-        else:
-            mask = np.broadcast_to(mask, tiles)
-            roi.data = np.ma.masked_array(roi.data, mask, hard_mask=True)
+        mask = np.broadcast_to(mask, tiles)
+        # roi.data = np.ma.masked_array(roi.data, mask, hard_mask=True)
+        roi.data = np.where(mask, np.nan, roi.data)
         if out is None:
             return roi
         else:
@@ -1157,14 +1189,14 @@ class Line2DROI(BaseInteractiveROI):
     `Line2DROI` can be used in place of a tuple containing the coordinates of the two end-points of the line and the linewdith `(x1, y1, x2, y2, linewidth)`.
     """
 
-    x1, y1, x2, y2, linewidth = (t.CFloat(t.Undefined),) * 4 + (t.CFloat(0.),)
+    x1, y1, x2, y2, linewidth = (t.CFloat(t.Undefined),) * 4 + (t.CFloat(0.0),)
     _ndim = 2
 
     def __init__(self, x1=None, y1=None, x2=None, y2=None, linewidth=0):
         super().__init__()
         x1, y1, x2, y2 = (
-            para if para is not None
-            else t.Undefined for para in (x1, y1, x2, y2))
+            para if para is not None else t.Undefined for para in (x1, y1, x2, y2)
+        )
 
         self.x1, self.y1, self.x2, self.y2 = x1, y1, x2, y2
         self.linewidth = linewidth
@@ -1178,7 +1210,13 @@ class Line2DROI(BaseInteractiveROI):
 
     @property
     def parameters(self):
-        return {"x1":self.x1, "y1":self.y1, "x2":self.x2, "y2":self.y2, "linewidth":self.linewidth}
+        return {
+            "x1": self.x1,
+            "y1": self.y1,
+            "x2": self.x2,
+            "y2": self.y2,
+            "linewidth": self.linewidth,
+        }
 
     def _x1_changed(self, old, new):
         self.update()
@@ -1268,8 +1306,8 @@ class Line2DROI(BaseInteractiveROI):
         d_row, d_col = p1 - p0
         return np.hypot(d_row, d_col)
 
-    def angle(self, axis='horizontal', units='degrees'):
-        """"Angle between ROI line and selected axis
+    def angle(self, axis="horizontal", units="degrees"):
+        """ "Angle between ROI line and selected axis
 
         Parameters
         ----------
@@ -1287,76 +1325,64 @@ class Line2DROI(BaseInteractiveROI):
 
         Examples
         --------
-        >>> import hyperspy.api as hs
-        >>> hs.roi.Line2DROI(0., 0., 1., 2., 1)
-        >>> r.angle()
+        >>> r = hs.roi.Line2DROI(0., 0., 1., 2.)
+        >>> print(r.angle())
         63.43494882292201
         """
 
         x = self.x2 - self.x1
         y = self.y2 - self.y1
 
-        if units == 'degrees':
-            conversation = 180. / np.pi
-        elif units == 'radians':
-            conversation = 1.
+        if units == "degrees":
+            conversation = 180.0 / np.pi
+        elif units == "radians":
+            conversation = 1.0
         else:
             raise ValueError(
-                "Units are not recognized. Use  either 'degrees' or 'radians'.")
+                "Units are not recognized. Use  either 'degrees' or 'radians'."
+            )
 
-        if axis == 'horizontal':
+        if axis == "horizontal":
             return np.arctan2(y, x) * conversation
-        elif axis == 'vertical':
+        elif axis == "vertical":
             return np.arctan2(x, y) * conversation
         else:
-            raise ValueError("Axis is not recognized. "
-                             "Use  either 'horizontal' or 'vertical'.")
+            raise ValueError(
+                "Axis is not recognized. " "Use  either 'horizontal' or 'vertical'."
+            )
 
     @staticmethod
-    def profile_line(img, src, dst, axes, linewidth=1,
-                     order=1, mode='constant', cval=0.0):
+    def profile_line(
+        img, src, dst, axes, linewidth=1, order=1, mode="constant", cval=0.0
+    ):
         """Return the intensity profile of an image measured along a scan line.
 
         Parameters
         ----------
-        img : numeric array, shape (M, N[, C])
+        img : numpy.ndarray
             The image, either grayscale (2D array) or multichannel
             (3D array, where the final axis contains the channel
             information).
-        src : 2-tuple of numeric scalar (float or int)
-            The start point of the scan line.
-        dst : 2-tuple of numeric scalar (float or int)
-            The end point of the scan line.
+        src : tuple of float, tuple of int
+            The start point of the scan line. Length of tuple is 2.
+        dst : tuple of float, tuple of int
+            The end point of the scan line. Length of tuple is 2.
         linewidth : int, optional
             Width of the scan, perpendicular to the line
-        order : int in {0, 1, 2, 3, 4, 5}, optional
+        order : {0, 1, 2, 3, 4, 5}, optional
             The order of the spline interpolation to compute image values at
             non-integer coordinates. 0 means nearest-neighbor interpolation.
-        mode : string, one of {'constant', 'nearest', 'reflect', 'wrap'},
-                optional
+        mode : {'constant', 'nearest', 'reflect', 'wrap'}, optional
             How to compute any values falling outside of the image.
         cval : float, optional
-            If `mode` is 'constant', what constant value to use outside the
+            If ``mode='constant'``, what constant value to use outside the
             image.
 
         Returns
         -------
-        return_value : array
+        numpy.ndarray
             The intensity profile along the scan line. The length of the
             profile is the ceil of the computed length of the scan line.
-
-        Examples
-        --------
-        >>> x = np.array([[1, 1, 1, 2, 2, 2]])
-        >>> img = np.vstack([np.zeros_like(x), x, x, x, np.zeros_like(x)])
-        >>> img
-        array([[0, 0, 0, 0, 0, 0],
-               [1, 1, 1, 2, 2, 2],
-               [1, 1, 1, 2, 2, 2],
-               [1, 1, 1, 2, 2, 2],
-               [0, 0, 0, 0, 0, 0]])
-        >>> profile_line(img, (2, 1), (2, 4))
-        array([ 1.,  1.,  2.,  2.])
 
         Notes
         -----
@@ -1367,22 +1393,27 @@ class Line2DROI(BaseInteractiveROI):
         for axis in axes:
             if not axis.is_uniform:
                 raise NotImplementedError(
-                    "Line profiles on data with non-uniform axes is not implemented.")
+                    "Line profiles on data with non-uniform axes is not implemented."
+                )
 
         import scipy.ndimage as nd
+
         # Convert points coordinates from axes units to pixels
-        p0 = ((src[0] - axes[0].offset) / axes[0].scale,
-              (src[1] - axes[1].offset) / axes[1].scale)
-        p1 = ((dst[0] - axes[0].offset) / axes[0].scale,
-              (dst[1] - axes[1].offset) / axes[1].scale)
+        p0 = (
+            (src[0] - axes[0].offset) / axes[0].scale,
+            (src[1] - axes[1].offset) / axes[1].scale,
+        )
+        p1 = (
+            (dst[0] - axes[0].offset) / axes[0].scale,
+            (dst[1] - axes[1].offset) / axes[1].scale,
+        )
         if linewidth < 0:
             raise ValueError("linewidth must be positive number")
         linewidth_px = linewidth / np.min([ax.scale for ax in axes])
         linewidth_px = int(round(linewidth_px))
         # Minimum size 1 pixel
         linewidth_px = linewidth_px if linewidth_px >= 1 else 1
-        perp_lines = Line2DROI._line_profile_coordinates(p0, p1,
-                                                         linewidth=linewidth_px)
+        perp_lines = Line2DROI._line_profile_coordinates(p0, p1, linewidth=linewidth_px)
         if img.ndim > 2:
             idx = [ax.index_in_array for ax in axes]
             if idx[0] < idx[1]:
@@ -1392,21 +1423,25 @@ class Line2DROI(BaseInteractiveROI):
                 img = np.rollaxis(img, idx[1], 0)
                 img = np.rollaxis(img, idx[0], 0)
             orig_shape = img.shape
-            img = np.reshape(img, orig_shape[0:2] +
-                             (np.product(orig_shape[2:]),))
-            pixels = [nd.map_coordinates(img[..., i].T, perp_lines,
-                                         order=order, mode=mode, cval=cval)
-                      for i in range(img.shape[2])]
+            img = np.reshape(img, orig_shape[0:2] + (np.prod(orig_shape[2:]),))
+            pixels = [
+                nd.map_coordinates(
+                    img[..., i].T, perp_lines, order=order, mode=mode, cval=cval
+                )
+                for i in range(img.shape[2])
+            ]
             i0 = min(axes[0].index_in_array, axes[1].index_in_array)
             pixels = np.transpose(np.asarray(pixels), (1, 2, 0))
             intensities = pixels.mean(axis=1)
             intensities = np.rollaxis(
-                np.reshape(intensities,
-                           intensities.shape[0:1] + orig_shape[2:]),
-                0, i0 + 1)
+                np.reshape(intensities, intensities.shape[0:1] + orig_shape[2:]),
+                0,
+                i0 + 1,
+            )
         else:
-            pixels = nd.map_coordinates(img, perp_lines,
-                                        order=order, mode=mode, cval=cval)
+            pixels = nd.map_coordinates(
+                img, perp_lines, order=order, mode=mode, cval=cval
+            )
             intensities = pixels.mean(axis=1)
 
         return intensities
@@ -1414,24 +1449,15 @@ class Line2DROI(BaseInteractiveROI):
     def __call__(self, signal, out=None, axes=None, order=0):
         """Slice the signal according to the ROI, and return it.
 
-        Arguments
-        ---------
+        Parameters
+        ----------
         signal : Signal
             The signal to slice with the ROI.
         out : Signal, default = None
             If the 'out' argument is supplied, the sliced output will be put
             into this instead of returning a Signal. See Signal.__getitem__()
             for more details on 'out'.
-        axes : specification of axes to use, default = None
-            The axes argument specifies which axes the ROI will be applied on.
-            The items in the collection can be either of the following:
-                * a tuple of:
-                    - DataAxis. These will not be checked with
-                      signal.axes_manager.
-                    - anything that will index signal.axes_manager
-                * For any other value, it will check whether the navigation
-                  space can fit the right number of axis, and use that if it
-                  fits. If not, it will try the signal space.
+        %s
         order : The spline interpolation order to use when extracting the line
             profile. 0 means nearest-neighbor interpolation, and is both the
             default and the fastest.
@@ -1442,31 +1468,37 @@ class Line2DROI(BaseInteractiveROI):
             axes = self.signal_map[signal][1]
         else:
             axes = self._parse_axes(axes, signal.axes_manager)
-        profile = Line2DROI.profile_line(signal.data,
-                                         (self.x1, self.y1),
-                                         (self.x2, self.y2),
-                                         axes=axes,
-                                         linewidth=self.linewidth,
-                                         order=order)
-        length = np.linalg.norm(np.diff(
-            np.array(((self.x1, self.y1), (self.x2, self.y2))), axis=0),
-            axis=1)[0]
+        profile = Line2DROI.profile_line(
+            signal.data,
+            (self.x1, self.y1),
+            (self.x2, self.y2),
+            axes=axes,
+            linewidth=self.linewidth,
+            order=order,
+        )
+        length = np.linalg.norm(
+            np.diff(np.array(((self.x1, self.y1), (self.x2, self.y2))), axis=0), axis=1
+        )[0]
         if out is None:
             axm = signal.axes_manager.deepcopy()
             i0 = min(axes[0].index_in_array, axes[1].index_in_array)
             axm.remove([ax.index_in_array + 3j for ax in axes])
-            axis = UniformDataAxis(size=profile.shape[i0],
-                                  scale=length / profile.shape[i0],
-                                  units=axes[0].units,
-                                  navigate=axes[0].navigate)
+            axis = UniformDataAxis(
+                size=profile.shape[i0],
+                scale=length / profile.shape[i0],
+                units=axes[0].units,
+                navigate=axes[0].navigate,
+            )
             axis.axes_manager = axm
             axm._axes.insert(i0, axis)
             from hyperspy.signals import BaseSignal
-            roi = BaseSignal(profile, axes=axm._get_axes_dicts(),
-                             metadata=signal.metadata.deepcopy(
-            ).as_dictionary(),
-                original_metadata=signal.original_metadata.
-                deepcopy().as_dictionary())
+
+            roi = BaseSignal(
+                profile,
+                axes=axm._get_axes_dicts(),
+                metadata=signal.metadata.deepcopy().as_dictionary(),
+                original_metadata=signal.original_metadata.deepcopy().as_dictionary(),
+            )
             return roi
         else:
             out.data = profile
@@ -1481,6 +1513,565 @@ class Line2DROI(BaseInteractiveROI):
             out.events.data_changed.trigger(out)
 
 
+class PolygonROI(BaseInteractiveROI):
+    """Selects a polygonal region in a 2D space. The coordinates of the
+    polygon vertices are given in the `vertices` attribute, which is a
+    list where each entry is a tuple (x, y) of a vertex's coordinates.
+    An edge runs from the final to the first point in the list.
+    If a polygon self overlaps, the overlapping areas may be considered
+    outside of the polygon and masked away.
+    """
+
+    _vertices = []
+    _ndim = 2
+
+    def __init__(self, vertices=None):
+        """
+        Parameters
+        ----------
+        vertices : list of tuple
+            List containing (x, y) values of the vertices of a polygon."""
+        super().__init__()
+
+        if vertices:
+            self.vertices = vertices
+
+    @property
+    def parameters(self):
+        return {"vertices": self.vertices}
+
+    def __getitem__(self, *args, **kwargs):
+        _tuple = tuple(self._vertices)
+        return _tuple.__getitem__(*args, **kwargs)
+
+    def __repr__(self):
+        para = []
+        for name, value in self.parameters.items():
+            parastr = f"{name}=["
+            parastr += ", ".join(f"({x:G}, {y:G})" for x, y in value)
+            parastr += "]"
+            para.append(parastr)
+        return f"{self.__class__.__name__}({', '.join(para)})"
+
+    def is_valid(self):
+        """
+        The polygon is defined as valid if either zero or more than two
+        vertices are fully defined.
+        """
+        valid = False
+        try:
+            valid = (
+                len(self._vertices) == 0
+                or len(self._vertices) > 2
+                and all(
+                    (None not in vertex and len(vertex) == 2)
+                    for vertex in self._vertices
+                )
+            )
+        finally:
+            return valid
+
+    @property
+    def vertices(self):
+        """Returns a list where each entry contains a `(x, y)` tuple
+        of the vertices of the polygon. The polygon is not closed.
+        Returns an empty list if no polygon is set."""
+
+        return self._vertices.copy()
+
+    @vertices.setter
+    def vertices(self, vertices):
+        """Sets the vertices of the polygon to the `vertices` argument,
+        where each vertex is to be given as a tuple `(x, y)` where `x`
+        and `y` are its coordinates. The list is set to loop around,
+        such that an edge runs from the final to the first vertex in
+        the list.
+
+        Parameters
+        ----------
+        vertices : list of tuples
+            List of (x, y) values of the vertices of the polygon.
+        """
+        old_vertices = self._vertices
+        self._vertices = vertices
+        if not self.is_valid():
+            self._vertices = old_vertices
+            raise ValueError(
+                "`vertices` is not an empty list or a list of fully defined two-dimensional "
+                + f"points with at least three entries:\n{vertices}"
+            )
+        if self.widgets:
+            self._update_widgets()
+
+    def _apply_roi(
+        self, signal, inverted=False, out=None, axes=None, additional_polygons=None
+    ):
+        if not self.is_valid():
+            raise ValueError(not_set_error_msg)
+
+        if axes is None and signal in self.signal_map:
+            axes = self.signal_map[signal][1]
+        else:
+            axes = self._parse_axes(axes, signal.axes_manager)
+
+        for axis in axes:
+            if not axis.is_uniform:
+                raise NotImplementedError(
+                    "This ROI cannot operate on a non-uniform axis."
+                )
+        natax = signal.axes_manager._get_axes_in_natural_order()
+        if not inverted and (
+            self._vertices  # Make sure at least one polygon is not empty
+            or (
+                additional_polygons is not None
+                and any(polygon for polygon in additional_polygons)
+            )
+        ):
+            # Slice original data with a circumscribed rectangle
+
+            polygons = [self._vertices]
+            # In case of combining multiple PolygonROI, all vertices must be considered
+            if additional_polygons is not None:
+                polygons += [polygon for polygon in additional_polygons]
+
+            left = min(x for polygon in polygons for x, y in polygon)
+            right = max(x for polygon in polygons for x, y in polygon) + axes[1].scale
+            top = min(y for polygon in polygons for x, y in polygon)
+            bottom = max(y for polygon in polygons for x, y in polygon) + axes[0].scale
+        else:
+            # Do not slice if selection is to be inverted or is empty
+            left, right = axes[0].low_value, axes[0].high_value + axes[0].scale
+            top, bottom = axes[1].low_value, axes[1].high_value + axes[1].scale
+
+        ranges = [[left, right], [top, bottom]]
+        slices = self._make_slices(natax, axes, ranges)
+        ir = [slices[natax.index(axes[0])], slices[natax.index(axes[1])]]
+
+        mask = self._boolean_mask(
+            axes=axes, xy_max=(right, bottom), additional_polygons=additional_polygons
+        )
+
+        mask = mask[ir[1], ir[0]]
+        if not inverted:
+            mask = np.logical_not(mask)  # Masked out areas should be True
+
+        nav_axes = [ax.navigate for ax in axes]
+        nav_dim = signal.axes_manager.navigation_dimension
+
+        # If there is one signal and one navigation dimension,
+        # the order of the axes should be swapped to conform to
+        # other ROI behaviour.
+        if True in nav_axes and False in nav_axes:
+            natax = natax[::-1]
+
+        tiles = []
+        shape = []
+        chunks = []
+        for i in range(len(slices)):
+            if signal._lazy:
+                chunks.append(signal.data.chunks[i][0])
+            if i == natax.index(axes[0]):
+                thisshape = mask.shape[0]
+                tiles.append(thisshape)
+                shape.append(thisshape)
+            elif i == natax.index(axes[1]):
+                thisshape = mask.shape[1]
+                tiles.append(thisshape)
+                shape.append(thisshape)
+            else:
+                tiles.append(signal.axes_manager._axes[i].size)
+                shape.append(1)
+        mask = mask.reshape(shape)
+
+        if True in nav_axes:
+            if False in nav_axes:
+                slicer = signal.inav[slices[:nav_dim]].isig.__getitem__
+                slices = slices[nav_dim:]
+            else:
+                slicer = signal.inav.__getitem__
+                slices = slices[0:nav_dim]
+        else:
+            slicer = signal.isig.__getitem__
+            slices = slices[nav_dim:]
+            # slices = slices[::-1] # Slicing in signal axes is reversed
+
+        roi = slicer(slices, out=out)
+        roi = out or roi
+        if roi._lazy:
+            import dask.array as da
+
+            mask = da.from_array(mask, chunks=chunks)
+        mask = np.broadcast_to(mask, tiles)
+        # roi.data = np.ma.masked_array(roi.data, mask, hard_mask=True)
+        roi.data = np.where(mask, np.nan, roi.data)
+        if out is None:
+            return roi
+        else:
+            out.events.data_changed.trigger(out)
+
+    def __call__(self, signal, inverted=False, out=None, axes=None):
+        return self._apply_roi(signal, inverted=inverted, out=out, axes=axes)
+
+    def _combine(
+        self, signal, inverted=False, out=None, axes=None, additional_polygons=None
+    ):
+        return self._apply_roi(
+            signal,
+            inverted=inverted,
+            out=out,
+            axes=axes,
+            additional_polygons=additional_polygons,
+        )
+
+    def _rasterized_mask(
+        self, polygon_vertices, xy_max=None, xy_min=None, x_scale=None, y_scale=None
+    ):
+        """Utility function to rasterize a polygon into a boolean numpy
+            array. The interior of the polygon is `True`.
+
+        Parameters
+        ----------
+        xy_max : tuple, optional
+            The maximum x and y values that the rasterized mask covers, given in
+            the same coordinate space as the polygon vertices. The defaults are
+            the max values in the `vertices` member attribute.
+        xy_min : tuple, optional
+            The minimum x and y values that the mask covers, given in the same coordinate
+            space as the polygon vertices.
+        x_scale : float, optional
+            This gives the scale of the second axis of the signal. In other words,
+            how many units in coordinate space that corresponds to one step between
+            columns.
+        y_scale : float
+            This gives the scale of the second axis of the signal. In other words,
+            how many units in coordinate space that corresponds to one step between
+            rows.
+
+        Returns
+        -------
+        return_value : array
+            boolean numpy array of the rasterized polygon. The entire or parts of
+            the polygon ROI can be within this shape.
+        """
+
+        if not xy_max:
+            x_max = max(x for x, y in polygon_vertices)
+            y_max = max(y for x, y in polygon_vertices)
+            xy_max = (x_max, y_max)
+
+        xy_min = xy_min if xy_min is not None else (0, 0)
+        x_scale = x_scale if x_scale is not None else 1.0
+        y_scale = y_scale if y_scale is not None else 1.0
+
+        min_index_x = round(xy_min[0] / x_scale)
+        min_index_y = round(xy_min[1] / y_scale)
+        max_index_x = round(xy_max[0] / x_scale)
+        max_index_y = round(xy_max[1] / y_scale)
+
+        mask = np.zeros(
+            (max_index_y - min_index_y + 1, max_index_x - min_index_x + 1), dtype=bool
+        )
+
+        for row in range(mask.shape[0]):
+            row_y = (min_index_y + row) * y_scale
+
+            intersections = []
+            for vertexind in range(len(polygon_vertices)):
+                x1, y1 = polygon_vertices[vertexind]
+                x2, y2 = polygon_vertices[(vertexind + 1) % len(polygon_vertices)]
+
+                # Only find intersection if line segment passes through row
+                if (y1 > row_y) != (y2 > row_y):
+                    intersection = x1 + (x2 - x1) * (row_y - y1) / (y2 - y1)
+                    intersections.append(intersection)
+                elif y1 == row_y:
+                    if y1 == y2:
+                        # Ensures edges parallel with row_y are included
+                        x_start = min(x1, x2)
+                        x_end = max(x1, x2)
+                        raster_start = round(x_start / x_scale) - min_index_x
+                        raster_end = round(x_end / x_scale) - min_index_x
+                        mask[row, raster_start : raster_end + 1] = True
+                    else:
+                        # Ensures vertices landing exactly on row_y are included
+                        mask[row, round(x1 / x_scale) - min_index_x] = True
+
+            intersections.sort()
+
+            for i in range(1, len(intersections), 2):
+                raster_start = round(intersections[i - 1] / x_scale) - min_index_x
+                raster_end = round(intersections[i] / x_scale) - min_index_x
+                mask[row, raster_start : raster_end + 1] = True
+
+        return mask
+
+    def _boolean_mask(
+        self,
+        axes_manager=None,
+        axes=None,
+        xy_max=None,
+        xy_min=None,
+        x_scale=None,
+        y_scale=None,
+        additional_polygons=None,
+    ):
+        """Function to rasterize the polygon into a boolean numpy array. The
+            interior of the polygon is by default `True`.
+
+        Parameters
+        ----------
+        axes_manager : :py:class:`~hyperspy.axes.AxesManager`, optional
+            If supplied, the rasterization parameters not explicitly given will be
+            extracted from this. The axes can be given with the `axes` attribute.
+        axes : list, optional
+            List of the axes in `axes_manager` that are to be used as a basis for
+            the rasterization if other parameters aren't supplied.
+        xy_max : tuple, optional
+            The maximum x and y values that the rasterized mask covers, given in
+            the same coordinate space as the polygon vertices. The defaults are
+            the max values in the `vertices` member attribute.
+        xy_min : tuple, optional
+            The minimum x and y values that the mask covers, given in the same coordinate
+            space as the polygon vertices.
+        x_scale : float, optional
+            This gives the scale of the second axis of the signal. In other words,
+            how many units in coordinate space that corresponds to one step between
+            columns.
+        y_scale : float, optional
+            This gives the scale of the second axis of the signal. In other words,
+            how many units in coordinate space that corresponds to one step between
+            rows.
+        additional_polygons : list, optional
+            List containing further polygons to be added to the mask, resulting
+            in a raster of several polygons. Each inner list gives the vertices
+            of one individual polygon. These do not need to be closed.
+
+        Returns
+        -------
+        return_value : array
+            boolean numpy array of the rasterized polygon. The entire or parts of
+            the polygon ROI can be within this shape.
+        """
+
+        # Get missing default values from `axes_manager` or `axes`
+        if axes_manager or axes:
+            axes = axes if not axes_manager else self._parse_axes(axes, axes_manager)
+
+            xy_max = (
+                xy_max
+                if xy_max is not None
+                else (axes[0].high_value, axes[1].high_value)
+            )
+            xy_min = (
+                xy_min if xy_min is not None else (axes[0].low_value, axes[1].low_value)
+            )
+
+            x_scale = x_scale if x_scale is not None else axes[0].scale
+            y_scale = y_scale if y_scale is not None else axes[1].scale
+
+        # Empty ROI
+        if not self._vertices:
+            mask = None
+            if xy_max:
+                xy_min = xy_min if xy_min is not None else (0, 0)
+
+                min_index_x = round(xy_min[0] / x_scale)
+                min_index_y = round(xy_min[1] / y_scale)
+                max_index_x = round(xy_max[0] / x_scale)
+                max_index_y = round(xy_max[1] / y_scale)
+
+                mask = np.zeros(
+                    (max_index_y - min_index_y + 1, max_index_x - min_index_x + 1),
+                    dtype=bool,
+                )
+
+        else:
+            mask = self._rasterized_mask(
+                polygon_vertices=self._vertices,
+                xy_max=xy_max,
+                xy_min=xy_min,
+                x_scale=x_scale,
+                y_scale=y_scale,
+            )
+
+        if additional_polygons is not None:
+            for polygon in additional_polygons:
+                if self._vertices is polygon:
+                    continue
+
+                other_mask = self._rasterized_mask(
+                    polygon_vertices=polygon,
+                    xy_max=xy_max,
+                    xy_min=xy_min,
+                    x_scale=x_scale,
+                    y_scale=y_scale,
+                )
+                if mask is None:
+                    mask = other_mask
+                else:
+                    # Expand mask to encompass both if needed
+                    if (
+                        other_mask.shape[0] > mask.shape[0]
+                        or other_mask.shape[1] > mask.shape[1]
+                    ):
+                        expanded_mask = np.zeros(
+                            np.max((mask.shape, other_mask.shape), axis=0), dtype=bool
+                        )
+                        expanded_mask[: mask.shape[0], : mask.shape[1]] = mask
+                        mask = expanded_mask
+
+                    mask[: other_mask.shape[0], : other_mask.shape[1]] |= other_mask
+
+        return mask
+
+    def _get_widget_type(self, axes, signal):
+        return widgets.PolygonWidget
+
+    def _apply_roi2widget(self, widget):
+        """This function is responsible for applying the ROI geometry to the
+        widget. When this function is called, the widget's events are already
+        suppressed, so this should not be necessary for _apply_roi2widget to
+        handle.
+        """
+        widget.set_vertices(self._vertices)
+
+    def _set_default_values(self, signal, axes=None):
+        """When the ROI is called interactively with Undefined parameters,
+        use these values instead.
+        """
+        self.vertices = []
+
+    def _set_from_widget(self, widget):
+        """
+        Sets the internal representation of the ROI from the passed widget,
+        without doing anything to events.
+        """
+        if not widget.finished_building():
+            return
+
+        try:
+            self.vertices = widget.get_vertices()
+        except ValueError:  # pragma: no cover
+            pass  # Do nothing if `widget` does not have valid vertices
+
+
 def _get_central_half_limits_of_axis(ax):
     "Return indices of the central half of a DataAxis"
     return ax._parse_value("rel0.25"), ax._parse_value("rel0.75")
+
+
+def combine_rois(signal, rois, inverted=False, out=None, axes=None):
+    """
+    Slice the signal according by combining a list of ROIs, by default
+    returning a sliced copy. Currently only implemented for a list of
+    :class:`~.api.roi.PolygonROI`.
+
+    Parameters
+    ----------
+    signal : :class:`~.api.signals.BaseSignal`
+        The signal to slice with the ROI.
+    rois : list of :class:`~.api.roi.PolygonROI`
+        List containing the ROIs to be sliced, making it possible
+        to combine several ROI shapes.
+    inverted : boolean, default = False
+        If ``True``, everything outside of the ROIs supplied will be
+        retained, with the insides of the ROIs becoming numpy.nan.
+    out : :class:`~.api.signals.BaseSignal`, default = None
+        If the ``out`` argument is supplied, the sliced output will be put
+        into this instead of returning a :class:`~.api.signals.BaseSignal`.
+    axes : list, optional
+        List of the axes in the signal that the ROIs are applied to.
+    """
+
+    for roi in rois:
+        if not isinstance(roi, PolygonROI):  # pragma: no cover
+            raise NotImplementedError(
+                "`combine_rois` is currently only implemented for `PolygonROI`."
+            )
+
+    polygonrois = rois
+    other_polygons = [
+        polygon._vertices for polygon in polygonrois[1:] if polygon.is_valid()
+    ]
+
+    sliced_signal = polygonrois[0]._combine(
+        signal,
+        inverted=inverted,
+        out=out,
+        axes=axes,
+        additional_polygons=other_polygons,
+    )
+
+    return sliced_signal
+
+
+def mask_from_rois(
+    rois,
+    axes_manager=None,
+    axes=None,
+    xy_max=None,
+    xy_min=None,
+    x_scale=None,
+    y_scale=None,
+):
+    """
+    Function to rasterize a list of ROIs into a boolean numpy array. The
+    interior of the ROIs are by default ``True``. Currently only implemented
+    for a list of :class:`~.api.roi.PolygonROI`.
+
+    Parameters
+    ----------
+    rois : list of :class:`~.api.roi.PolygonROI`
+        List containing the ROIs to be added to the mask, making it possible
+        to combine several ROI shapes.
+    axes_manager : :py:class:`~hyperspy.axes.AxesManager`, optional
+        If supplied, the rasterization parameters not explicitly given will be
+        extracted from this. The axes can be given with the `axes` attribute.
+    axes : list, optional
+        List of the axes in ``axes_manager`` that are to be used as a basis for
+        the rasterization if other parameters aren't supplied.
+    xy_max : tuple, optional
+        The maximum x and y values that the rasterized mask covers, given in
+        the same coordinate space as the polygon vertices. The defaults are
+        the max values in the ``vertices`` of the supplied ROIs.
+    xy_min : tuple, optional
+        The minimum x and y values that the mask covers, given in the same coordinate
+        space as the polygon vertices. The default is from ``(0, 0)``.
+    x_scale : float, optional
+        This gives the scale of the second axis of the signal. In other words,
+        how many units in coordinate space that corresponds to one step between
+        columns. Default is 1.
+    y_scale : float, optional
+        This gives the scale of the second axis of the signal. In other words,
+        how many units in coordinate space that corresponds to one step between
+        rows. Default is 1.
+
+    Returns
+    -------
+    return_value : numpy.ndarray
+        boolean numpy array of the rasterized ROIs. Depending on the limits set for
+        the rasterization, parts of the ROIs may be outside of this.
+    """
+
+    for roi in rois:
+        if not isinstance(roi, PolygonROI):  # pragma: no cover
+            raise NotImplementedError(
+                "`mask_from_rois` is currently only implemented for `PolygonROI`."
+            )
+
+    polygonrois = rois
+    other_polygons = [
+        polygon._vertices for polygon in polygonrois[1:] if polygon.is_valid()
+    ]
+
+    mask = polygonrois[0]._boolean_mask(
+        axes_manager=axes_manager,
+        axes=axes,
+        xy_max=xy_max,
+        xy_min=xy_min,
+        x_scale=x_scale,
+        y_scale=y_scale,
+        additional_polygons=other_polygons,
+    )
+
+    return mask

@@ -1,20 +1,20 @@
 # -*- coding: utf-8 -*-
-# Copyright 2007-2021 The HyperSpy developers
+# Copyright 2007-2024 The HyperSpy developers
 #
-# This file is part of  HyperSpy.
+# This file is part of HyperSpy.
 #
-#  HyperSpy is free software: you can redistribute it and/or modify
+# HyperSpy is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-#  HyperSpy is distributed in the hope that it will be useful,
+# HyperSpy is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with  HyperSpy.  If not, see <http://www.gnu.org/licenses/>.
+# along with HyperSpy. If not, see <https://www.gnu.org/licenses/#GPL>.
 
 import dask.array as da
 import numpy as np
@@ -27,12 +27,13 @@ from hyperspy.signals import BaseSignal, Signal2D
 @lazifyTestClass
 class TestTranspose:
     def setup_method(self, method):
-        self.s = BaseSignal(np.random.rand(1, 2, 3, 4, 5, 6))
-        for ax, name in zip(self.s.axes_manager._axes, "abcdef"):
+        s = BaseSignal(np.random.rand(1, 2, 3, 4, 5, 6))
+        for ax, name in zip(s.axes_manager._axes, "abcdef"):
             ax.name = name
         # just to make sure in case default changes
-        self.s.axes_manager.set_signal_dimension(6)
-        self.s.estimate_poissonian_noise_variance()
+        assert s.axes_manager.signal_dimension == 6
+        s.estimate_poissonian_noise_variance()
+        self.s = s
 
     def test_signal_int_transpose(self):
         t = self.s.transpose(signal_axes=2)
@@ -134,3 +135,17 @@ def test_lazy_transpose_rechunks():
     assert s1.data.chunks == (cks[2], cks[3], cks[0], cks[1])
     s2 = s.transpose(optimize=True)
     assert s2.data.chunks != s1.data.chunks
+
+
+def test_transpose_nav0_sig0():
+    s = BaseSignal([0.0])
+    assert s.axes_manager.signal_dimension == 0
+    assert s.axes_manager.navigation_dimension == 0
+    assert s.axes_manager.signal_axes[0].size == 1
+    assert s.axes_manager.navigation_axes == ()
+
+    s2 = s.T
+    assert s2.axes_manager.signal_dimension == 0
+    assert s2.axes_manager.navigation_dimension == 1
+    assert s2.axes_manager.signal_axes == ()
+    assert s2.axes_manager.navigation_axes[0].size == 1

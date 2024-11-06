@@ -1,26 +1,25 @@
 # -*- coding: utf-8 -*-
-# Copyright 2007-2021 The HyperSpy developers
+# Copyright 2007-2024 The HyperSpy developers
 #
-# This file is part of  HyperSpy.
+# This file is part of HyperSpy.
 #
-#  HyperSpy is free software: you can redistribute it and/or modify
+# HyperSpy is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-#  HyperSpy is distributed in the hope that it will be useful,
+# HyperSpy is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with  HyperSpy.  If not, see <http://www.gnu.org/licenses/>.
+# along with HyperSpy. If not, see <https://www.gnu.org/licenses/#GPL>.
 
 from hyperspy._components.expression import Expression
 
 
 class RC(Expression):
-
     r"""
     RC function component (based on the time-domain capacitor voltage response
     of an RC-circuit)
@@ -40,7 +39,7 @@ class RC(Expression):
 
 
     Parameters
-    -----------
+    ----------
     Vmax : float
         maximum voltage, asymptote of the function for
         :math:`\mathrm{lim}_{x\to\infty}`
@@ -49,11 +48,12 @@ class RC(Expression):
     tau : float
         tau=RC is the RC circuit time constant (voltage rise time)
     **kwargs
-        Extra keyword arguments are passed to the ``Expression`` component.
+        Extra keyword arguments are passed to the
+        :class:`~.api.model.components1D.Expression` component.
 
     """
 
-    def __init__(self, Vmax=1., V0=0., tau=1., module="numexpr", **kwargs):
+    def __init__(self, Vmax=1.0, V0=0.0, tau=1.0, module=None, **kwargs):
         super().__init__(
             expression="V0 + Vmax * (1 - exp(-x / tau))",
             name="RC",

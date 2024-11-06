@@ -1,25 +1,25 @@
 # -*- coding: utf-8 -*-
-# Copyright 2007-2021 The HyperSpy developers
+# Copyright 2007-2024 The HyperSpy developers
 #
-# This file is part of  HyperSpy.
+# This file is part of HyperSpy.
 #
-#  HyperSpy is free software: you can redistribute it and/or modify
+# HyperSpy is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-#  HyperSpy is distributed in the hope that it will be useful,
+# HyperSpy is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with  HyperSpy.  If not, see <http://www.gnu.org/licenses/>.
+# along with HyperSpy. If not, see <https://www.gnu.org/licenses/#GPL>.
 
 """SAMFire modules
 
 
-The :mod:`~hyperspy.api.samfire` module contains the following submodules:
+The :mod:`~.api.samfire` module contains the following submodules:
 
 fit_tests
     Tests to check fit convergence when running SAMFire
@@ -34,5 +34,16 @@ SamfirePool
     The parallel pool, customized to run SAMFire.
 
 """
-from hyperspy.samfire_utils import (fit_tests, global_strategies,
-                                    local_strategies)
+
+from hyperspy.samfire_utils import (
+    fit_tests,
+    global_strategies,
+    local_strategies,
+)
+from hyperspy.samfire_utils.samfire_pool import SamfirePool
+
+__all__ = ["fit_tests", "global_strategies", "local_strategies", "SamfirePool"]
+
+
+def __dir__():
+    return sorted(__all__)

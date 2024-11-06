@@ -1,30 +1,27 @@
 # -*- coding: utf-8 -*-
-# Copyright 2007-2021 The HyperSpy developers
+# Copyright 2007-2024 The HyperSpy developers
 #
-# This file is part of  HyperSpy.
+# This file is part of HyperSpy.
 #
-#  HyperSpy is free software: you can redistribute it and/or modify
+# HyperSpy is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-#  HyperSpy is distributed in the hope that it will be useful,
+# HyperSpy is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with  HyperSpy.  If not, see <http://www.gnu.org/licenses/>.
+# along with HyperSpy. If not, see <https://www.gnu.org/licenses/#GPL>.
 
-from distutils.version import LooseVersion
-
-import dask
 import numpy as np
 import pytest
 
 from hyperspy.decorators import lazifyTestClass
-from hyperspy.signals import Signal1D
 from hyperspy.misc.array_tools import rebin
+from hyperspy.signals import Signal1D
 
 
 def _test_default_navigation_signal_operations_over_many_axes(self, op):
@@ -133,7 +130,6 @@ class Test3D:
         new_s = self.signal.rebin(new_shape=(4, 2, 6))
         assert new_s.data.shape == self.data.shape
 
-
     def test_rebin_no_variance(self):
         new_s = self.signal.rebin(scale=(2, 2, 1))
         with pytest.raises(AttributeError):
@@ -152,6 +148,19 @@ class Test3D:
         with pytest.raises(ValueError):
             rebin(self.signal.data, scale=(2, 2, 2, 2))
 
+    @pytest.mark.parametrize("dtype", (int, float, ">u4", np.uint16, np.int32))
+    def test_rebin_dtype_same(self, dtype):
+        s = self.signal
+        s.data = s.data.astype(dtype)
+        new_s = s.rebin(scale=(2, 2, 1), dtype="same")
+        assert new_s.data.dtype.name == s.data.dtype.name
+
+    @pytest.mark.parametrize("dtype", (int, float, np.uint16, np.int32))
+    def test_rebin_dtype_specify(self, dtype):
+        s = self.signal
+        new_s = s.rebin(scale=(2, 2, 1), dtype=dtype)
+        assert new_s.data.dtype.name == np.dtype(dtype).name
+
     def test_swap_axes_simple(self):
         s = self.signal
         assert s.swap_axes(0, 1).data.shape == (4, 2, 6)
@@ -168,9 +177,9 @@ class Test3D:
                 cks[0],
                 cks[2],
             )
-        assert s.swap_axes(0, 2).axes_manager[0].navigate == True
+        assert s.swap_axes(0, 2).axes_manager[0].navigate is True
         s.axes_manager[2].is_binned = True
-        assert s.swap_axes(0, 2).axes_manager[2].is_binned == True
+        assert s.swap_axes(0, 2).axes_manager[2].is_binned is True
 
     def test_swap_axes_iteration(self):
         s = self.signal
@@ -183,7 +192,7 @@ class Test3D:
         s = self.signal
         s = s.transpose(signal_axes=3)
         ns = s._get_navigation_signal()
-        assert ns.axes_manager.signal_dimension == 1
+        assert ns.axes_manager.signal_dimension == 0
         assert ns.axes_manager.signal_size == 1
         assert ns.axes_manager.navigation_dimension == 0
 
@@ -233,7 +242,7 @@ class Test3D:
         ns = s._get_signal_signal()
         assert ns.axes_manager.navigation_dimension == 0
         assert ns.axes_manager.navigation_size == 0
-        assert ns.axes_manager.signal_dimension == 1
+        assert ns.axes_manager.signal_dimension == 0
 
     def test_get_signal_signal_nav_dim1(self):
         s = self.signal
@@ -296,24 +305,23 @@ class Test3D:
 
 @lazifyTestClass
 class TestRebinDtype:
-
     def setup_method(self, method):
         s = Signal1D(np.arange(100).reshape(2, 5, 10))
         self.s = s
 
-    @pytest.mark.parametrize('dtype', [None, np.float32])
+    @pytest.mark.parametrize("dtype", [None, np.float32])
     def test_rebin_dtype_interpolation(self, dtype):
         s = self.s
         if s._lazy:
-            pytest.skip('Liner interpolation not supported for lazy signal.')
+            pytest.skip("Liner interpolation not supported for lazy signal.")
         s.change_dtype(np.uint8)
         s2 = s.rebin(scale=(3, 3, 1), crop=False, dtype=dtype)
         if dtype != np.float16:
-            dtype = np.dtype('float')
+            dtype = np.dtype("float")
         assert s2.data.dtype == dtype
         assert s.sum() == s2.sum()
 
-    @pytest.mark.parametrize('dtype', ['same', np.uint16])
+    @pytest.mark.parametrize("dtype", ["same", np.uint16])
     def test_rebin_dtype_interpolation_same_integer(self, dtype):
         s = self.s
         if s._lazy:
@@ -328,24 +336,17 @@ class TestRebinDtype:
     def test_rebin_invalid_dtype_args(self):
         s = self.s
         with pytest.raises(ValueError):
-            _ = s.rebin(scale=(5, 2, 1), dtype='invalid_string')
+            _ = s.rebin(scale=(5, 2, 1), dtype="invalid_string")
 
-    @pytest.mark.parametrize('dtype', [None, 'same', np.uint16])
+    @pytest.mark.parametrize("dtype", [None, "same", np.uint16])
     def test_rebin_dtype(self, dtype):
         s = self.s
         s.change_dtype(np.uint8)
-        if s._lazy and LooseVersion(dask.__version__) < LooseVersion("2.11.0"):
-            if dtype is not None:
-                with pytest.raises(ValueError):
-                    _ = s.rebin(scale=(5, 2, 1), dtype=dtype)
-            # exit to skip the rest of the test
-            return
-
         s2 = s.rebin(scale=(5, 2, 1), dtype=dtype)
-        if dtype == None:
+        if dtype is None:
             # np.sum default uses platform (un)signed interger (input dependent)
             dtype = np.uint
-        elif dtype == 'same':
+        elif dtype == "same":
             dtype = s.data.dtype
         assert s2.data.dtype == dtype
         assert s.sum() == s2.sum()

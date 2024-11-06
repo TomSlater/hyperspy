@@ -4,113 +4,111 @@ on: [push, pull_request]
 
 jobs:
   run_test_site:
-    name: ${{ matrix.os }}-py${{ matrix.PYTHON_VERSION }}${{ matrix.LABEL }}
-    runs-on: ${{ matrix.os }}-latest
+    name: ${{ matrix.os }}-${{ matrix.os_version }}-py${{ matrix.PYTHON_VERSION }}${{ matrix.LABEL }}
+    runs-on: ${{ matrix.os }}-${{ matrix.os_version }}
     timeout-minutes: 30
     env:
       MPLBACKEND: agg
       PIP_ARGS: --upgrade -e
-      PYTEST_ARGS: --pyargs hyperspy --reruns 3 -n 2 --instafail
-      PYTEST_ARGS_COVERAGE:
+      PYTEST_ARGS: --pyargs hyperspy --reruns 3 --instafail
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu, windows, macos]
-        PYTHON_VERSION: [3.8, 3.9]
-        PIP_SELECTOR: ['[all, tests]']
-        DEPENDENCIES_DEV: [false]
+        os_version: [latest]
+        PYTHON_VERSION: ['3.9', '3.10', ]
+        PIP_SELECTOR: ['[all, tests, coverage]']
         include:
-          # test oldest supported version of main dependencies on python 3.6
+          # test oldest supported version of main dependencies on python 3.8
           - os: ubuntu
-            PYTHON_VERSION: 3.6
-            OLDEST_SUPPORTED_VERSION: true
-            DEPENDENCIES: matplotlib==3.1.0 numpy==1.17.1 scipy==1.1 imagecodecs==2019.12.3 dask==2.1.0
+            os_version: latest
+            PYTHON_VERSION: '3.8'
             PIP_SELECTOR: '[all, tests, coverage]'
-            PYTEST_ARGS_COVERAGE: --cov=. --cov-report=xml
+            OLDEST_SUPPORTED_VERSION: true
+            # Don't install pillow 10.4.0 because of its incompatibility with numpy 1.20.x
+            # https://github.com/python-pillow/Pillow/pull/8187
+            DEPENDENCIES: dask[array]==2021.5.1 matplotlib==3.6.0 numba==0.52 numpy==1.20.0 scipy==1.6 scikit-image==0.18 scikit-learn==1.0.1 pillow!=10.4.0
             LABEL: -oldest
           # test minimum requirement
           - os: ubuntu
-            PYTHON_VERSION: 3.8
-            PIP_SELECTOR: '[tests]'
+            os_version: latest
+            PYTHON_VERSION: '3.12'
+            PIP_SELECTOR: '[tests, coverage]'
             LABEL: -minimum
-          # Run coverage
           - os: ubuntu
-            PYTHON_VERSION: 3.8
+            os_version: latest
+            PYTHON_VERSION: '3.8'
             PIP_SELECTOR: '[all, tests, coverage]'
-            PYTEST_ARGS_COVERAGE: --cov=. --cov-report=xml
-            LABEL: -coverage
-          # Run test suite against dependencies development version
           - os: ubuntu
-            PYTHON_VERSION: 3.8
-            PIP_SELECTOR: '[all, tests]'
-            LABEL: -dependencies_dev
-            DEPENDENCIES_DEV: true
-            DEPENDENCIES: numpy scipy scikit-learn scikit-image
-          - os: ubuntu
-            PYTHON_VERSION: 3.7
-            PIP_SELECTOR: '[all, tests]'
-        exclude:
-          # redundant build (same as coverage)
-          - os: ubuntu
-            PYTHON_VERSION: 3.8
+            os_version: latest
+            PYTHON_VERSION: '3.11'
+            PIP_SELECTOR: '[all, tests, coverage]'
+          - os: macos
+            os_version: '13'
+            PYTHON_VERSION: '3.11'
+            PIP_SELECTOR: '[all, tests, coverage]'
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
+        with: 
+          fetch-depth: 0
+          fetch-tags: true
 
-      - uses: actions/setup-python@v2
+      - name: Fetch tags upstream
+        if: ${{ github.repository_owner != 'hyperspy' }}
+        # Needs to fetch the tags from upstream to get the
+        # correct version with setuptools_scm
+        run: |
+          git remote add upstream https://github.com/hyperspy/hyperspy.git
+          git fetch upstream --tags
+
+      - uses: actions/setup-python@v5
         name: Install Python
         with:
           python-version: ${{ matrix.PYTHON_VERSION }}
+
+      - name: Get the number of CPUs
+        id: cpus
+        run: |
+          import os, platform
+          num_cpus = os.cpu_count()
+          print(f"Number of CPU: {num_cpus}")
+          print(f"Architecture: {platform.machine()}")
+          output_file = os.environ["GITHUB_OUTPUT"]
+          with open(output_file, "a", encoding="utf-8") as output_stream:
+              output_stream.write(f"count={num_cpus}\n")
+        shell: python
 
       - name: Display version
         run: |
           python --version
           pip --version
 
+      - name: Install oldest supported version
+        if: ${{ matrix.OLDEST_SUPPORTED_VERSION }}
+        run: |
+          pip install ${{ matrix.DEPENDENCIES }} -v
+
       - name: Install
         shell: bash
         run: |
           pip install ${{ env.PIP_ARGS }} .'${{ matrix.PIP_SELECTOR }}'
 
-      - name: Install oldest supported version
-        if: ${{ matrix.OLDEST_SUPPORTED_VERSION }}
+      - name: Pip list
         run: |
-          pip install ${{ matrix.DEPENDENCIES }}
-
-      - name: Install dependencies development version
-        if: ${{ matrix.DEPENDENCIES_DEV }}
-        run: |
-          pip install --upgrade --no-deps --pre \
-            -i https://pypi.anaconda.org/scipy-wheels-nightly/simple \
-            ${{ matrix.DEPENDENCIES }}
+          pip list
 
       - name: Run test suite
         run: |
-          pytest ${{ env.PYTEST_ARGS }} ${{ matrix.PYTEST_ARGS_COVERAGE }}
+          pytest ${{ env.PYTEST_ARGS }} -n ${{ steps.cpus.outputs.count }} --cov=. --cov-report=xml
+
+      - name: Run doctest (Docstring)
+        if: ${{ matrix.OLDEST_SUPPORTED_VERSION == 'false'}}
+        run: |
+          pytest ${{ env.PYTEST_ARGS }} --doctest-modules --ignore=hyperspy/tests
 
       - name: Upload coverage to Codecov
-        if: ${{ always() }} && ${{ matrix.PYTEST_ARGS_COVERAGE }}
-        uses: codecov/codecov-action@v1
-
-  build_doc:
-    name: Build doc
-    runs-on: ubuntu-latest
-    env:
-      BUILD_DEPS: python3-dev build-essential graphviz
-      LATEX_DEPS: dvipng latexmk texlive-latex-recommended texlive-latex-extra texlive-fonts-recommended
-
-    steps:
-      - uses: actions/checkout@v2
-
-      - uses: ammaraskar/sphinx-action@master
-        with:
-
-          pre-build-command: "apt-get update -y && apt-get install -y ${{ env.BUILD_DEPS }} ${{ env.LATEX_DEPS }}  && pip install -e .[all,build-doc]"
-          build-command: make html
-          docs-folder: doc/
-
-      - uses: actions/upload-artifact@v2
-        with:
-          path: ./doc/_build/html/
-          name: doc_build
-
+        if: ${{ github.repository_owner == 'hyperspy' }}
+        uses: codecov/codecov-action@v4
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

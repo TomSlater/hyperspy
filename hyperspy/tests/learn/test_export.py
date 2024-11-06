@@ -1,20 +1,20 @@
 # -*- coding: utf-8 -*-
-# Copyright 2007-2021 The HyperSpy developers
+# Copyright 2007-2024 The HyperSpy developers
 #
-# This file is part of  HyperSpy.
+# This file is part of HyperSpy.
 #
-#  HyperSpy is free software: you can redistribute it and/or modify
+# HyperSpy is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-#  HyperSpy is distributed in the hope that it will be useful,
+# HyperSpy is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with  HyperSpy.  If not, see <http://www.gnu.org/licenses/>.
+# along with HyperSpy. If not, see <https://www.gnu.org/licenses/#GPL>.
 
 import numpy as np
 
@@ -22,7 +22,6 @@ from hyperspy import signals
 
 
 class TestMVAExport:
-
     def setup_method(self, method):
         s = signals.Signal1D(np.random.random((2, 3, 4, 5)))
         sa = s.axes_manager[-1]
@@ -41,11 +40,12 @@ class TestMVAExport:
         bss_factors = self.s.get_bss_factors()
         assert bss_factors.axes_manager[-1].scale == self.sa.scale
         assert bss_factors.axes_manager[-1].offset == self.sa.offset
-        assert (bss_factors.axes_manager.signal_shape ==
-                self.s.axes_manager.signal_shape)
+        assert bss_factors.axes_manager.signal_shape == self.s.axes_manager.signal_shape
 
     def test_get_bss_loadings(self):
         bss_loadings = self.s.get_bss_loadings()
         assert bss_loadings.axes_manager.navigation_dimension == 1
-        assert (bss_loadings.axes_manager.signal_shape ==
-                self.s.axes_manager.navigation_shape)
+        assert (
+            bss_loadings.axes_manager.signal_shape
+            == self.s.axes_manager.navigation_shape
+        )

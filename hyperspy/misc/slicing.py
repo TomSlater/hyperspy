@@ -1,28 +1,29 @@
 # -*- coding: utf-8 -*-
-# Copyright 2007-2021 The HyperSpy developers
+# Copyright 2007-2024 The HyperSpy developers
 #
-# This file is part of  HyperSpy.
+# This file is part of HyperSpy.
 #
-#  HyperSpy is free software: you can redistribute it and/or modify
+# HyperSpy is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-#  HyperSpy is distributed in the hope that it will be useful,
+# HyperSpy is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with  HyperSpy.  If not, see <http://www.gnu.org/licenses/>.
+# along with HyperSpy. If not, see <https://www.gnu.org/licenses/#GPL>.
 
 from operator import attrgetter
-import numpy as np
-from dask.array import Array as dArray
 
-from hyperspy.misc.utils import attrsetter
-from hyperspy.misc.export_dictionary import parse_flag_string
+import dask.array as da
+import numpy as np
+
 from hyperspy import roi
+from hyperspy.misc.export_dictionary import parse_flag_string
+from hyperspy.misc.utils import attrsetter
 
 
 def _slice_target(target, dims, both_slices, slice_nav=None, issignal=False):
@@ -55,26 +56,27 @@ def _slice_target(target, dims, both_slices, slice_nav=None, issignal=False):
         sl = tuple(array_slices[:nav_dims])
         if isinstance(target, np.ndarray):
             return np.atleast_1d(target[sl])
-        if isinstance(target, dArray):
+        if isinstance(target, da.Array):
             return target[sl]
         raise ValueError(
-            'tried to slice with navigation dimensions, but was neither a '
-            'signal nor an array')
+            "tried to slice with navigation dimensions, but was neither a "
+            "signal nor an array"
+        )
     if slice_nav is False:  # check explicitly
         if issignal:
             return target.isig[slices]
         sl = tuple(array_slices[-sig_dims:])
         if isinstance(target, np.ndarray):
             return np.atleast_1d(target[sl])
-        if isinstance(target, dArray):
+        if isinstance(target, da.Array):
             return target[sl]
         raise ValueError(
-            'tried to slice with navigation dimensions, but was neither a '
-            'signal nor an array')
+            "tried to slice with navigation dimensions, but was neither a "
+            "signal nor an array"
+        )
 
 
-def copy_slice_from_whitelist(
-        _from, _to, dims, both_slices, isNav, order=None):
+def copy_slice_from_whitelist(_from, _to, dims, both_slices, isNav, order=None):
     """Copies things from one object to another, according to whitelist, slicing
     where required.
 
@@ -100,28 +102,26 @@ def copy_slice_from_whitelist(
 
     def make_slice_navigation_decision(flags, isnav):
         if isnav:
-            if 'inav' in flags:
+            if "inav" in flags:
                 return True
             return None
-        if 'isig' in flags:
+        if "isig" in flags:
             return False
         return None
 
     swl = None
-    if hasattr(_from, '_slicing_whitelist'):
+    if hasattr(_from, "_slicing_whitelist"):
         swl = _from._slicing_whitelist
 
     if order is not None and not isinstance(order, tuple):
-        raise ValueError('order argument has to be None or a tuple of strings')
+        raise ValueError("order argument has to be None or a tuple of strings")
 
     if order is None:
         order = ()
-    if hasattr(_from, '_slicing_order'):
-        order = order + \
-            tuple(k for k in _from._slicing_order if k not in order)
+    if hasattr(_from, "_slicing_order"):
+        order = order + tuple(k for k in _from._slicing_order if k not in order)
 
-    keys = order + tuple(k for k in _from._whitelist.keys() if k not in
-                         order)
+    keys = order + tuple(k for k in _from._whitelist.keys() if k not in order)
 
     for key in keys:
         val = _from._whitelist[key]
@@ -136,24 +136,19 @@ def copy_slice_from_whitelist(
         if swl is not None and key in swl:
             flags.extend(parse_flag_string(swl[key]))
 
-        if 'init' in flags:
+        if "init" in flags:
             continue
-        if 'id' in flags:
+        if "id" in flags:
             continue
 
-        if key == 'self':
+        if key == "self":
             target = None
         else:
             target = attrgetter(key)(_from)
 
-        if 'inav' in flags or 'isig' in flags:
+        if "inav" in flags or "isig" in flags:
             slice_nav = make_slice_navigation_decision(flags, isNav)
-            result = _slice_target(
-                target,
-                dims,
-                both_slices,
-                slice_nav,
-                'sig' in flags)
+            result = _slice_target(target, dims, both_slices, slice_nav, "sig" in flags)
             attrsetter(_to, key, result)
             continue
         else:
@@ -163,7 +158,6 @@ def copy_slice_from_whitelist(
 
 
 class SpecialSlicers(object):
-
     def __init__(self, obj, isNavigation):
         """Create a slice of the signal. The indexing supports integer,
         decimal numbers or strings (containing a decimal number and an units).
@@ -175,7 +169,7 @@ class SpecialSlicers(object):
         array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
         >>> s.axes_manager[0].scale = 0.5
         >>> s.axes_manager[0].axis
-        array([ 0. ,  0.5,  1. ,  1.5,  2. ,  2.5,  3. ,  3.5,  4. ,  4.5])
+        array([0. , 0.5, 1. , 1.5, 2. , 2.5, 3. , 3.5, 4. , 4.5])
         >>> s.isig[0.5:4.].data
         array([1, 2, 3, 4, 5, 6, 7])
         >>> s.isig[0.5:4].data
@@ -194,7 +188,6 @@ class SpecialSlicers(object):
 
 
 class FancySlicing(object):
-
     def _get_array_slices(self, slices, isNavigation=None):
         try:
             len(slices)
@@ -226,10 +219,8 @@ class FancySlicing(object):
 
         # Create a deepcopy of self that contains a view of self.data
 
-        nav_idx = [el.index_in_array for el in
-                   self.axes_manager.navigation_axes]
-        signal_idx = [el.index_in_array for el in
-                      self.axes_manager.signal_axes]
+        nav_idx = [el.index_in_array for el in self.axes_manager.navigation_axes]
+        signal_idx = [el.index_in_array for el in self.axes_manager.signal_axes]
 
         if not has_signal:
             idx = nav_idx
@@ -244,9 +235,14 @@ class FancySlicing(object):
             # Expand the first Ellipsis
             ellipsis_index = _orig_slices.index(Ellipsis)
             _orig_slices.remove(Ellipsis)
-            _orig_slices = (_orig_slices[:ellipsis_index] + [slice(None), ] *
-                            max(0, len(idx) - len(_orig_slices)) +
-                            _orig_slices[ellipsis_index:])
+            _orig_slices = (
+                _orig_slices[:ellipsis_index]
+                + [
+                    slice(None),
+                ]
+                * max(0, len(idx) - len(_orig_slices))
+                + _orig_slices[ellipsis_index:]
+            )
             # Replace all the following Ellipses by :
             while Ellipsis in _orig_slices:
                 _orig_slices[_orig_slices.index(Ellipsis)] = slice(None)
@@ -255,16 +251,22 @@ class FancySlicing(object):
         if len(_orig_slices) > len(idx):
             raise IndexError("too many indices")
 
-        slices = np.array([slice(None,)] *
-                          len(self.axes_manager._axes))
+        slices = np.array(
+            [
+                slice(
+                    None,
+                )
+            ]
+            * len(self.axes_manager._axes)
+        )
 
         slices[idx] = _orig_slices + (slice(None),) * max(
-            0, len(idx) - len(_orig_slices))
+            0, len(idx) - len(_orig_slices)
+        )
 
         array_slices = []
         for slice_, axis in zip(slices, self.axes_manager._axes):
-            if (isinstance(slice_, slice) or
-                    len(self.axes_manager._axes) < 2):
+            if isinstance(slice_, slice) or len(self.axes_manager._axes) < 2:
                 array_slices.append(axis._get_array_slices(slice_))
             else:
                 if isinstance(slice_, float):
@@ -273,63 +275,57 @@ class FancySlicing(object):
         return tuple(array_slices)
 
     def _slicer(self, slices, isNavigation=None, out=None):
+        if self.axes_manager._ragged and not isNavigation:
+            raise RuntimeError("`isig` is not supported for ragged signal.")
+
         array_slices = self._get_array_slices(slices, isNavigation)
         new_data = self.data[array_slices]
-        if new_data.size == 1 and new_data.dtype is np.dtype('O'):
-            if isinstance(new_data[0], (np.ndarray, dArray)):
-                return self.__class__(new_data[0]).transpose(navigation_axes=0)
-            else:
-                return new_data[0]
+        if (
+            self.ragged
+            and new_data.dtype != np.dtype(object)
+            and isinstance(new_data, np.ndarray)
+        ):
+            # Numpy will convert the array to non-ragged, for consistency,
+            # we make a ragged array with only one item
+            data = new_data.copy()
+            new_data = np.empty((1,), dtype=object)
+            new_data[0] = data
 
         if out is None:
-            _obj = self._deepcopy_with_new_data(new_data,
-                                                copy_variance=True)
+            _obj = self._deepcopy_with_new_data(new_data, copy_variance=True)
             _to_remove = []
             for slice_, axis in zip(array_slices, _obj.axes_manager._axes):
-                if (isinstance(slice_, slice) or
-                        len(self.axes_manager._axes) < 2):
+                if isinstance(slice_, slice) or len(self.axes_manager._axes) < 2:
                     axis._slice_me(slice_)
                 else:
                     _to_remove.append(axis.index_in_axes_manager)
-            for _ind in reversed(sorted(_to_remove)):
-                _obj._remove_axis(_ind)
+            _obj._remove_axis(_to_remove)
         else:
             out.data = new_data
             _obj = out
             i = 0
             for slice_, axis_src in zip(array_slices, self.axes_manager._axes):
                 axis_src = axis_src.copy()
-                if (isinstance(slice_, slice) or
-                        len(self.axes_manager._axes) < 2):
+                if isinstance(slice_, slice) or len(self.axes_manager._axes) < 2:
                     axis_src._slice_me(slice_)
                     axis_dst = out.axes_manager._axes[i]
                     i += 1
-                    axis_dst.update_from(axis_src, attributes=(
-                        "scale", "offset", "size"))
+                    axis_dst.update_from(axis_src)
 
         if hasattr(self, "_additional_slicing_targets"):
             for ta in self._additional_slicing_targets:
                 try:
                     t = attrgetter(ta)(self)
                     if out is None:
-                        if hasattr(t, '_slicer'):
-                            attrsetter(
-                                _obj,
-                                ta,
-                                t._slicer(
-                                    slices,
-                                    isNavigation))
+                        if hasattr(t, "_slicer"):
+                            attrsetter(_obj, ta, t._slicer(slices, isNavigation))
                     else:
                         target = attrgetter(ta)(_obj)
-                        t._slicer(
-                            slices,
-                            isNavigation,
-                            out=target)
+                        t._slicer(slices, isNavigation, out=target)
 
                 except AttributeError:
                     pass
-        # _obj.get_dimensions_from_data() # replots, so we do it manually:
-        dc = _obj.data
+
         if out is None:
             return _obj
         else:

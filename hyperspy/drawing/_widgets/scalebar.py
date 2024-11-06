@@ -1,30 +1,40 @@
 # -*- coding: utf-8 -*-
-# Copyright 2007-2021 The HyperSpy developers
+# Copyright 2007-2024 The HyperSpy developers
 #
-# This file is part of  HyperSpy.
+# This file is part of HyperSpy.
 #
-#  HyperSpy is free software: you can redistribute it and/or modify
+# HyperSpy is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-#  HyperSpy is distributed in the hope that it will be useful,
+# HyperSpy is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with  HyperSpy.  If not, see <http://www.gnu.org/licenses/>.
+# along with HyperSpy. If not, see <https://www.gnu.org/licenses/#GPL>.
 
+
+import numpy as np
 
 from hyperspy.misc.math_tools import closest_nice_number
 
 
 class ScaleBar(object):
-
-    def __init__(self, ax, units, pixel_size=None, color='white',
-                 position=None, max_size_ratio=0.25, lw=2, length=None,
-                 animated=False):
+    def __init__(
+        self,
+        ax,
+        units,
+        pixel_size=None,
+        color="white",
+        position=None,
+        max_size_ratio=0.25,
+        lw=2,
+        length=None,
+        animated=False,
+    ):
         """Add a scale bar to an image.
 
         Parameters
@@ -72,53 +82,54 @@ class ScaleBar(object):
 
     def get_units_string(self):
         if self.tex_bold is True:
-            if (self.units[0] and self.units[-1]) == '$':
-                return r'$\mathbf{%g\,%s}$' % \
-                    (self.length, self.units[1:-1])
+            if (self.units[0] and self.units[-1]) == "$":
+                return r"$\mathbf{%g\,%s}$" % (self.length, self.units[1:-1])
             else:
-                return r'$\mathbf{%g\,}$\textbf{%s}' % \
-                    (self.length, self.units)
+                return r"$\mathbf{%g\,}$\textbf{%s}" % (self.length, self.units)
         else:
-            return r'$%g\,$%s' % (self.length, self.units)
+            return r"$%g\,$%s" % (self.length, self.units)
 
     def calculate_line_position(self, pad=0.05):
-        return ((1 - pad) * self.xmin + pad * self.xmax,
-                (1 - pad) * self.ymin + pad * self.ymax)
+        return (
+            (1 - pad) * self.xmin + pad * self.xmax,
+            (1 - pad) * self.ymin + pad * self.ymax,
+        )
 
-    def calculate_text_position(self, pad=1 / 100.):
+    def calculate_text_position(self, pad=1 / 100.0):
         ps = self.pixel_size if self.pixel_size is not None else 1
         x1, y1 = self.position
         x2, y2 = x1 + self.length / ps, y1
 
-        self.text_position = ((x1 + x2) / 2.,
-                              y2 + (self.ymax - self.ymin) / ps * pad)
+        self.text_position = ((x1 + x2) / 2.0, y2 + (self.ymax - self.ymin) / ps * pad)
 
     def calculate_size(self, max_size_ratio=0.25):
         ps = self.pixel_size if self.pixel_size is not None else 1
-        size = closest_nice_number(ps * (self.xmax - self.xmin) *
-                                   max_size_ratio)
+        size = closest_nice_number(
+            np.abs(ps * (self.xmax - self.xmin) * max_size_ratio)
+        )
         self.length = size
 
     def remove(self):
         if self.line is not None:
-            self.ax.lines.remove(self.line)
+            self.line.remove()
         if self.text is not None:
-            self.ax.texts.remove(self.text)
+            self.text.remove()
 
     def plot_scale(self, line_width=1):
         self.remove()
         ps = self.pixel_size if self.pixel_size is not None else 1
         x1, y1 = self.position
         x2, y2 = x1 + self.length / ps, y1
-        self.line, = self.ax.plot([x1, x2], [y1, y2],
-                                  linestyle='-',
-                                  lw=line_width,
-                                  animated=self.animated)
-        self.text = self.ax.text(*self.text_position,
-                                 s=self.get_units_string(),
-                                 ha='center',
-                                 size='medium',
-                                 animated=self.animated)
+        (self.line,) = self.ax.plot(
+            [x1, x2], [y1, y2], linestyle="-", lw=line_width, animated=self.animated
+        )
+        self.text = self.ax.text(
+            *self.text_position,
+            s=self.get_units_string(),
+            ha="center",
+            size="medium",
+            animated=self.animated,
+        )
         self.ax.set_xlim(self.xmin, self.xmax)
         self.ax.set_ylim(self.ymin, self.ymax)
         self.ax.figure.canvas.draw_idle()

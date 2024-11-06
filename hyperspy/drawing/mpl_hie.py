@@ -1,28 +1,27 @@
 # -*- coding: utf-8 -*-
-# Copyright 2007-2021 The HyperSpy developers
+# Copyright 2007-2024 The HyperSpy developers
 #
-# This file is part of  HyperSpy.
+# This file is part of HyperSpy.
 #
-#  HyperSpy is free software: you can redistribute it and/or modify
+# HyperSpy is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-#  HyperSpy is distributed in the hope that it will be useful,
+# HyperSpy is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with  HyperSpy.  If not, see <http://www.gnu.org/licenses/>.
+# along with HyperSpy. If not, see <https://www.gnu.org/licenses/#GPL>.
 
+from hyperspy.defaults_parser import preferences
 from hyperspy.drawing import image
 from hyperspy.drawing.mpl_he import MPL_HyperExplorer
-from hyperspy.defaults_parser import preferences
 
 
 class MPL_HyperImage_Explorer(MPL_HyperExplorer):
-
     def plot_signal(self, **kwargs):
         """
         Parameters
@@ -46,18 +45,23 @@ class MPL_HyperImage_Explorer(MPL_HyperExplorer):
 
         imf.quantity_label = self.quantity_label
 
-        kwargs['data_function_kwargs'] = self.signal_data_function_kwargs
-        if "cmap" not in kwargs.keys() or kwargs['cmap'] is None:
+        kwargs["data_function_kwargs"] = self.signal_data_function_kwargs
+        if "cmap" not in kwargs.keys() or kwargs["cmap"] is None:
             kwargs["cmap"] = preferences.Plot.cmap_signal
-        imf.plot(**kwargs)
+        imf.plot(
+            # Passed to figure creation
+            _on_figure_window_close=self.close,
+            # Other kwargs
+            **kwargs,
+        )
         self.signal_plot = imf
 
         if imf.figure is not None:
             if self.axes_manager.navigation_axes:
                 self.signal_plot.figure.canvas.mpl_connect(
-                    'key_press_event', self.axes_manager.key_navigator)
+                    "key_press_event", self.axes_manager.key_navigator
+                )
             if self.navigator_plot is not None:
                 self.navigator_plot.figure.canvas.mpl_connect(
-                    'key_press_event', self.axes_manager.key_navigator)
-                imf.events.closed.connect(self.close_navigator_plot, [])
-            imf.events.closed.connect(self._on_signal_plot_closing, [])
+                    "key_press_event", self.axes_manager.key_navigator
+                )

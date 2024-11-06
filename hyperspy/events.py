@@ -1,30 +1,29 @@
 # -*- coding: utf-8 -*-
-# Copyright 2007-2021 The HyperSpy developers
+# Copyright 2007-2024 The HyperSpy developers
 #
-# This file is part of  HyperSpy.
+# This file is part of HyperSpy.
 #
-#  HyperSpy is free software: you can redistribute it and/or modify
+# HyperSpy is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-#  HyperSpy is distributed in the hope that it will be useful,
+# HyperSpy is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with  HyperSpy.  If not, see <http://www.gnu.org/licenses/>.
+# along with HyperSpy. If not, see <https://www.gnu.org/licenses/#GPL>.
 
 import inspect
+import re
 from collections.abc import Iterable
 from contextlib import contextmanager
-from functools import wraps   # Used in exec statement
-import re
+from functools import wraps  # noqa: F401 Used in exec statement
 
 
-class Events(object):
-
+class Events:
     """
     Events container.
 
@@ -42,16 +41,16 @@ class Events(object):
         all callbacks of all events in the container. When the 'with' lock
         completes, the old suppression values will be restored.
 
-        Example
-        -------
-        >>> with obj.events.suppress():
+        Examples
+        --------
+        >>> with obj.events.suppress(): # doctest: +SKIP
         ...     # Any events triggered by assignments are prevented:
         ...     obj.val_a = a
         ...     obj.val_b = b
         >>> # Trigger one event instead:
-        >>> obj.events.values_changed.trigger()
+        >>> obj.events.values_changed.trigger() # doctest: +SKIP
 
-        See also
+        See Also
         --------
         Event.suppress
         Event.suppress_callback
@@ -73,13 +72,13 @@ class Events(object):
         Updates the doc to reflect the events that are contained
         """
         new_doc = self.__class__.__doc__
-        new_doc += '\n\tEvents:\n\t-------\n'
+        new_doc += "\n\tEvents:\n\t-------\n"
         for name, e in self._events.items():
-            edoc = inspect.getdoc(e) or ''
+            edoc = inspect.getdoc(e) or ""
             doclines = edoc.splitlines()
             e_short = doclines[0] if len(doclines) > 0 else edoc
-            new_doc += '\t%s :\n\t\t%s\n' % (name, e_short)
-        new_doc = new_doc.replace('\t', '    ')
+            new_doc += "\t%s :\n\t\t%s\n" % (name, e_short)
+        new_doc = new_doc.replace("\t", "    ")
         self.__doc__ = new_doc
 
     def __setattr__(self, name, value):
@@ -142,14 +141,16 @@ class Events(object):
         return "<hyperspy.events.Events: " + repr(self._events) + ">"
 
 
-class Event(object):
+class Event:
+    """
+    Events class
 
-    def __init__(self, doc='', arguments=None):
+    """
+
+    def __init__(self, doc="", arguments=None):
         """
-        Create an Event object.
-
-        Arguments
-        ---------
+        Parameters
+        ----------
         doc : str
             Optional docstring for the new Event.
         arguments : iterable
@@ -157,8 +158,8 @@ class Event(object):
             element must either be an argument name, or a tuple containing
             the argument name and the argument's default value.
 
-        Example
-        -------
+        Examples
+        --------
         >>> from hyperspy.events import Event
         >>> Event()
         <hyperspy.events.Event: set()>
@@ -167,7 +168,7 @@ class Event(object):
         >>> e1 = Event()
         >>> e2 = Event(arguments=('arg1', ('arg2', None)))
         >>> e1.trigger(arg1=12, arg2=43, arg3='str', arg4=4.3)  # Can trigger with whatever
-        >>> e2.trigger(arg1=11, arg2=22, arg3=3.4)
+        >>> e2.trigger(arg1=11, arg2=22, arg3=3.4) # doctest: +SKIP
         Traceback (most recent call last):
             ...
         TypeError: trigger() got an unexpected keyword argument 'arg3'
@@ -205,32 +206,30 @@ class Event(object):
                 defaults.append(arg[1])
                 arg = arg[0]
             elif len(defaults) > 0:
-                raise SyntaxError(
-                    "non-default argument follows default argument")
+                raise SyntaxError("non-default argument follows default argument")
             m = self._re_arg_name.match(arg)
             if m is None or m.end() != len(arg):
                 raise ValueError("Argument name invalid: %s" % arg)
-        arguments = [a[0] if isinstance(a, (tuple, list))
-                     else a for a in arguments]
+        arguments = [a[0] if isinstance(a, (tuple, list)) else a for a in arguments]
         # Create the dynamic code:
-        arglist = ', '.join(arguments)
-        arg_pass = ', '.join([a + '=' + a for a in arguments])
-        wrap_code = u"""
+        arglist = ", ".join(arguments)
+        arg_pass = ", ".join([a + "=" + a for a in arguments])
+        wrap_code = """
         @wraps(f)
         def trigger(self, %s):
             return f(%s)
         """ % (arglist, arg_pass)
-        wrap_code = wrap_code.replace("        ", "")      # Remove indentation
+        wrap_code = wrap_code.replace("        ", "")  # Remove indentation
         # Execute dynamic code:
         gl = dict(globals())
         gl.update(locals())
-        gl.update({'f': orig_f})    # Make sure it keeps the original!
+        gl.update({"f": orig_f})  # Make sure it keeps the original!
         exec(wrap_code, gl, locals())
-        new_f = locals()['trigger']
+        new_f = locals()["trigger"]
         # Replace the trigger function with the new one
         if defaults:
             new_f.__defaults__ = tuple(defaults)
-        new_f = new_f.__get__(self, self.__class__)     # Bind method to self
+        new_f = new_f.__get__(self, self.__class__)  # Bind method to self
         self.trigger = new_f
 
     @contextmanager
@@ -240,17 +239,17 @@ class Event(object):
         all events in the container. When the 'with' lock completes, the old
         suppression values will be restored.
 
-        Example
-        -------
-        >>> with obj.events.myevent.suppress():
+        Examples
+        --------
+        >>> with obj.events.myevent.suppress(): # doctest: +SKIP
         ...     # These would normally both trigger myevent:
         ...     obj.val_a = a
         ...     obj.val_b = b
 
         Trigger manually once:
-        >>> obj.events.myevent.trigger()
+        >>> obj.events.myevent.trigger() # doctest: +SKIP
 
-        See also
+        See Also
         --------
         suppress_callback
         Events.suppress
@@ -270,17 +269,17 @@ class Event(object):
         will trigger. When the 'with' lock completes, the old suppression value
         will be restored.
 
-        Example
-        -------
+        Examples
+        --------
 
-        >>> with obj.events.myevent.suppress_callback(f):
+        >>> with obj.events.myevent.suppress_callback(f): # doctest: +SKIP
         ...     # Events will trigger as normal, but `f` will not be called
         ...     obj.val_a = a
         ...     obj.val_b = b
         >>> # Here, `f` will be called as before:
-        >>> obj.events.myevent.trigger()
+        >>> obj.events.myevent.trigger() # doctest: +SKIP
 
-        See also
+        See Also
         --------
         suppress
         Events.suppress
@@ -296,24 +295,23 @@ class Event(object):
 
     @property
     def connected(self):
-        """ Connected functions.
-        """
+        """Connected functions."""
         ret = set()
         ret.update(self._connected_all)
         ret.update(self._connected_some.keys())
         ret.update(self._connected_map.keys())
         return ret
 
-    def connect(self, function, kwargs='all'):
+    def connect(self, function, kwargs="all"):
         """
         Connects a function to the event.
 
-        Arguments
-        ---------
+        Parameters
+        ----------
         function : callable
             The function to call when the event triggers.
-        kwargs : {tuple or list, dictionary, 'all', 'auto'}, default "all"
-            If "all", all the trigger keyword arguments are passed to the
+        kwargs : tuple or list, dict, str {``'all' | ``'auto'``}, default ``"all"``
+            If ``"all"``, all the trigger keyword arguments are passed to the
             function. If a list or tuple of strings, only those keyword
             arguments that are in the tuple or list are passed. If empty,
             no keyword argument is passed. If dictionary, the keyword arguments
@@ -321,7 +319,7 @@ class Event(object):
             {"a" : "b"} maps the trigger argument "a" to the function argument
             "b".
 
-        See also
+        See Also
         --------
         disconnect
 
@@ -329,9 +327,8 @@ class Event(object):
         if not callable(function):
             raise TypeError("Only callables can be registered")
         if function in self.connected:
-            raise ValueError("Function %s already connected to %s." %
-                             (function, self))
-        if kwargs == 'auto':
+            raise ValueError("Function %s already connected to %s." % (function, self))
+        if kwargs == "auto":
             spec = inspect.signature(function)
             _has_args = False
             _has_kwargs = False
@@ -344,11 +341,13 @@ class Event(object):
                 else:
                     _normal_params.append(name)
             if _has_args and not _has_kwargs:
-                raise NotImplementedError("Connecting to variable argument "
-                                          "functions is not supported in auto "
-                                          "connection mode.")
+                raise NotImplementedError(
+                    "Connecting to variable argument "
+                    "functions is not supported in auto "
+                    "connection mode."
+                )
             elif _has_kwargs:
-                kwargs = 'all'
+                kwargs = "all"
             else:
                 kwargs = _normal_params
         if kwargs == "all":
@@ -377,7 +376,7 @@ class Event(object):
             If True, returns the kwargs that would reconnect the function as
             it was.
 
-        See also
+        See Also
         --------
         connect
         suppress_callback
@@ -389,8 +388,9 @@ class Event(object):
         elif function in self._connected_map:
             self._connected_map.pop(function)
         else:
-            raise ValueError("The %s function is not connected to %s." %
-                             (function, self))
+            raise ValueError(
+                "The %s function is not connected to %s." % (function, self)
+            )
 
     def trigger(self, **kwargs):
         """
@@ -398,7 +398,7 @@ class Event(object):
         Otherwise it calls all the connected functions with the arguments as
         specified when connected.
 
-        See also
+        See Also
         --------
         suppress
         suppress_callback
@@ -409,8 +409,7 @@ class Event(object):
         # Work on copies of collections of connected functions.
         # Take copies initially, to ensure that all functions connected when
         # event triggered are called.
-        connected_all = self._connected_all.difference(
-            self._suppressed_callbacks)
+        connected_all = self._connected_all.difference(self._suppressed_callbacks)
         connected_some = list(self._connected_some.items())
         connected_map = list(self._connected_map.items())
 
@@ -431,11 +430,12 @@ class Event(object):
 
     def __str__(self):
         if self.__doc__:
-            edoc = inspect.getdoc(self) or ''
+            edoc = inspect.getdoc(self) or ""
             doclines = edoc.splitlines()
             e_short = doclines[0] if len(doclines) > 0 else edoc
-            text = ("<hyperspy.events.Event: " + e_short + ": " +
-                    str(self.connected) + ">")
+            text = (
+                "<hyperspy.events.Event: " + e_short + ": " + str(self.connected) + ">"
+            )
         else:
             text = self.__repr__()
         return text
@@ -445,7 +445,6 @@ class Event(object):
 
 
 class EventSuppressor(object):
-
     """
     Object to enforce a variety of suppression types simultaneously
 
@@ -459,16 +458,16 @@ class EventSuppressor(object):
       Events where it is connected.
     * Any iterable collection of the above target types
 
-    Example
-    -------
-    >>> es = EventSuppressor((event1, callback1), (event1, callback2))
-    >>> es.add(event2, callback2)
-    >>> es.add(event3)
-    >>> es.add(events_container1)
-    >>> es.add(events_container2, callback1)
-    >>> es.add(event4, (events_container3, callback2))
-    >>>
-    >>> with es.suppress():
+    Examples
+    --------
+    >>> es = EventSuppressor((event1, callback1), (event1, callback2)) # doctest: +SKIP
+    >>> es.add(event2, callback2) # doctest: +SKIP
+    >>> es.add(event3) # doctest: +SKIP
+    >>> es.add(events_container1) # doctest: +SKIP
+    >>> es.add(events_container2, callback1) # doctest: +SKIP
+    >>> es.add(event4, (events_container3, callback2)) # doctest: +SKIP
+
+    >>> with es.suppress(): # doctest: +SKIP
     ...     do_something()
     """
 
@@ -493,16 +492,17 @@ class EventSuppressor(object):
             self._cms.append(cm)
 
     def _is_tuple_target(self, candidate):
-        v = (isinstance(candidate, Iterable) and
-             not isinstance(candidate, Events) and
-             len(candidate) == 2 and
-             isinstance(candidate[0], (Event, Events)) and
-             callable(candidate[1]))
+        v = (
+            isinstance(candidate, Iterable)
+            and not isinstance(candidate, Events)
+            and len(candidate) == 2
+            and isinstance(candidate[0], (Event, Events))
+            and callable(candidate[1])
+        )
         return v
 
     def _is_target(self, candidate):
-        v = (isinstance(candidate, (Event, Events)) or
-             self._is_tuple_target(candidate))
+        v = isinstance(candidate, (Event, Events)) or self._is_tuple_target(candidate)
         return v
 
     def add(self, *to_suppress):
@@ -518,8 +518,11 @@ class EventSuppressor(object):
          - Any iterable collection of the above target types
         """
         # Remove useless layers of iterables:
-        while (isinstance(to_suppress, Iterable) and
-               not isinstance(to_suppress, Events) and len(to_suppress) == 1):
+        while (
+            isinstance(to_suppress, Iterable)
+            and not isinstance(to_suppress, Events)
+            and len(to_suppress) == 1
+        ):
             to_suppress = to_suppress[0]
         # If single target passed, add directly:
         if self._is_target(to_suppress):
@@ -540,7 +543,7 @@ class EventSuppressor(object):
         all events added. When the 'with' lock completes, the old suppression
         values will be restored.
 
-        See also
+        See Also
         --------
         Events.suppress
         Event.suppress
@@ -551,7 +554,7 @@ class EventSuppressor(object):
         try:
             for cm in self._cms:
                 cm.__enter__()
-                cms.append(cm)                  # Only add entered CMs to list
+                cms.append(cm)  # Only add entered CMs to list
             yield
         finally:
             # Completed succefully or exception occured, unwind all

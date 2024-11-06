@@ -1,6 +1,6 @@
 """
-Ported first from the astroML project: http://astroml.org/
-Ported again from the astropy project: http://astropy.org/
+Ported first from the astroML project: https://astroml.org/
+Ported again from the astropy project: https://astropy.org/
 
 Tools for working with distributions
 """
@@ -154,6 +154,8 @@ class _KnuthF:
             smaller values indicate a better fit.
 
         """
+        if not np.isscalar(M):
+            M = M[0]
         M = int(M)
 
         if M <= 0:

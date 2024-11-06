@@ -1,35 +1,31 @@
 # -*- coding: utf-8 -*-
-# Copyright 2007-2021 The HyperSpy developers
+# Copyright 2007-2024 The HyperSpy developers
 #
-# This file is part of  HyperSpy.
+# This file is part of HyperSpy.
 #
-#  HyperSpy is free software: you can redistribute it and/or modify
+# HyperSpy is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-#  HyperSpy is distributed in the hope that it will be useful,
+# HyperSpy is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with  HyperSpy.  If not, see <http://www.gnu.org/licenses/>.
+# along with HyperSpy. If not, see <https://www.gnu.org/licenses/#GPL>.
 
 import logging
-import warnings
-from distutils.version import LooseVersion
 
 import numpy as np
-import scipy
-from scipy.linalg import svd
-from scipy.sparse.linalg import svds
+from numpy.linalg import svd
 
-from hyperspy.exceptions import VisibleDeprecationWarning
 from hyperspy.misc.machine_learning.import_sklearn import (
     randomized_svd,
     sklearn_installed,
 )
+from hyperspy.misc.utils import is_cupy_array
 
 _logger = logging.getLogger(__name__)
 
@@ -42,7 +38,7 @@ def svd_flip_signs(u, v, u_based_decision=True):
 
     Parameters
     ----------
-    u, v : numpy array
+    u, v : numpy.ndarray
         u and v are the outputs of a singular value decomposition.
     u_based_decision : bool, default True
         If True, use the columns of u as the basis for sign flipping.
@@ -51,7 +47,7 @@ def svd_flip_signs(u, v, u_based_decision=True):
 
     Returns
     -------
-    u, v : numpy array
+    u, v : numpy.ndarray
         Adjusted outputs with same dimensions as inputs.
 
     """
@@ -60,11 +56,11 @@ def svd_flip_signs(u, v, u_based_decision=True):
     # All rights reserved.
 
     if u_based_decision:
-        max_abs_cols = np.argmax(np.abs(u), axis=0)
-        signs = np.sign(u[max_abs_cols, range(u.shape[1])])
+        max_abs_cols = np.argmax(abs(u), axis=0)
+        signs = np.sign(u[max_abs_cols, list(range(u.shape[1]))])
     else:
-        max_abs_rows = np.argmax(np.abs(v), axis=1)
-        signs = np.sign(v[range(v.shape[0]), max_abs_rows])
+        max_abs_rows = np.argmax(abs(v), axis=1)
+        signs = np.sign(v[list(range(v.shape[0])), max_abs_rows])
 
     u *= signs
     v *= signs[:, np.newaxis]
@@ -84,32 +80,32 @@ def svd_solve(
 
     Parameters
     ----------
-    data : numpy array, shape (m, n)
-        Input data array
+    data : numpy.ndarray
+        Input data array with shape (m, n)
     output_dimension : None or int
         Number of components to keep/calculate
     svd_solver : {"auto", "full", "arpack", "randomized"}, default "auto"
-        If auto:
-            The solver is selected by a default policy based on `data.shape` and
-            `output_dimension`: if the input data is larger than 500x500 and the
-            number of components to extract is lower than 80% of the smallest
-            dimension of the data, then the more efficient "randomized"
-            method is enabled. Otherwise the exact full SVD is computed and
-            optionally truncated afterwards.
-        If full:
-            run exact SVD, calling the standard LAPACK solver via
-            :py:func:`scipy.linalg.svd`, and select the components by postprocessing
-        If arpack:
-            use truncated SVD, calling ARPACK solver via
-            :py:func:`scipy.sparse.linalg.svds`. It requires strictly
-            `0 < output_dimension < min(data.shape)`
-        If randomized:
-            use truncated SVD, calling :py:func:`sklearn.utils.extmath.randomized_svd`
-            to estimate a limited number of components
+        - If ``"auto"``:
+          The solver is selected by a default policy based on `data.shape` and
+          `output_dimension`: if the input data is larger than 500x500 and the
+          number of components to extract is lower than 80% of the smallest
+          dimension of the data, then the more efficient "randomized"
+          method is enabled. Otherwise the exact full SVD is computed and
+          optionally truncated afterwards.
+        - If ``"full"``:
+          Run exact SVD, calling the standard LAPACK solver via
+          :func:`scipy.linalg.svd`, and select the components by postprocessing
+        - If ``"arpack"``:
+          Use truncated SVD, calling ARPACK solver via
+          :func:`scipy.sparse.linalg.svds`. It requires strictly
+          `0 < output_dimension < min(data.shape)`
+        - If ``"randomized"``:
+          Use truncated SVD, calling :func:`sklearn.utils.extmath.randomized_svd`
+          to estimate a limited number of components
     svd_flip : bool, default True
         If True, adjusts the signs of the loadings and factors such that
         the loadings that are largest in absolute value are always positive.
-        See :py:func:`~.learn.svd_pca.svd_flip` for more details.
+        See :func:`~hyperspy.learn.svd_pca.svd_flip_signs` for more details.
     u_based_decision : bool, default True
         If True, and svd_flip is True, use the columns of u as the basis for sign-flipping.
         Otherwise, use the rows of v. The choice of which variable to base the
@@ -117,7 +113,7 @@ def svd_solve(
 
     Returns
     -------
-    U, S, V : numpy array
+    U, S, V : numpy.ndarray
         Output of SVD such that X = U*S*V.T
 
     """
@@ -151,14 +147,15 @@ def svd_solve(
             )
         U, S, V = randomized_svd(data, n_components=output_dimension, **kwargs)
     elif svd_solver == "arpack":
-        if LooseVersion(scipy.__version__) < LooseVersion("1.4.0"):  # pragma: no cover
-            raise ValueError('`svd_solver="arpack"` requires scipy >= 1.4.0')
-
         if output_dimension >= min(m, n):
             raise ValueError(
                 "svd_solver='arpack' requires output_dimension "
                 "to be strictly less than min(data.shape)."
             )
+        if is_cupy_array(data):  # pragma: no cover
+            from cupyx.scipy.sparse.linalg import svds
+        else:
+            from scipy.sparse.linalg import svds
         U, S, V = svds(data, k=output_dimension, **kwargs)
         # svds doesn't follow scipy.linalg.svd conventions,
         # so reverse its outputs
@@ -210,57 +207,39 @@ def svd_pca(
             optionally truncated afterwards.
         If full:
             run exact SVD, calling the standard LAPACK solver via
-            :py:func:`scipy.linalg.svd`, and select the components by postprocessing
+            :func:`scipy.linalg.svd`, and select the components by postprocessing
         If arpack:
             use truncated SVD, calling ARPACK solver via
-            :py:func:`scipy.sparse.linalg.svds`. It requires strictly
+            :func:`scipy.sparse.linalg.svds`. It requires strictly
             `0 < output_dimension < min(data.shape)`
         If randomized:
-            use truncated SVD, calling :py:func:`sklearn.utils.extmath.randomized_svd`
+            use truncated SVD, calling :func:`sklearn.utils.extmath.randomized_svd`
             to estimate a limited number of components
     centre : {None, "navigation", "signal"}, default None
         * If None, the data is not centered prior to decomposition.
-        * If "navigation", the data is centered along the navigation axis.
-        * If "signal", the data is centered along the signal axis.
+        * If ``"navigation"``, the data is centered along the navigation axis.
+        * If ``"signal"``, the data is centered along the signal axis.
     auto_transpose : bool, default True
         If True, automatically transposes the data to boost performance.
     svd_flip : bool, default True
         If True, adjusts the signs of the loadings and factors such that
         the loadings that are largest in absolute value are always positive.
-        See :py:func:`~.learn.svd_pca.svd_flip` for more details.
+        See :func:`~hyperspy.learn.svd_pca.svd_flip_signs` for more details.
 
     Returns
     -------
-    factors : numpy array
-    loadings : numpy array
-    explained_variance : numpy array
-    mean : numpy array or None (if centre is None)
+    factors : numpy.ndarray
+    loadings : numpy.ndarray
+    explained_variance : numpy.ndarray
+    mean : numpy.ndarray or None
+        None if centre is None
 
     """
     N, M = data.shape
 
     if centre is None:
         mean = None
-
     else:
-        # To avoid confusion between terminology in different
-        # machine learning fields, we map the argument here.
-        # See #1159 for some discussion.
-        if centre in ["variables", "trials"]:
-            centre_map = {
-                "trials": "navigation",
-                "variables": "signal",
-            }
-            centre_new = centre_map.get(centre, None)
-
-            warnings.warn(
-                f"centre='{centre}' has been deprecated and will be "
-                f"removed in HyperSpy 2.0. Please use '{centre_new}' instead.",
-                VisibleDeprecationWarning,
-            )
-
-            centre = centre_new
-
         if centre == "signal":
             mean = data.mean(axis=1)[:, np.newaxis]
         elif centre == "navigation":
@@ -285,7 +264,7 @@ def svd_pca(
         **kwargs,
     )
 
-    explained_variance = S ** 2 / N
+    explained_variance = S**2 / N
 
     if auto_transpose is False:
         factors = V.T

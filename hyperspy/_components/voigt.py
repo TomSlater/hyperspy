@@ -1,37 +1,32 @@
 # -*- coding: utf-8 -*-
-# Copyright 2007-2021 The HyperSpy developers
+# Copyright 2007-2024 The HyperSpy developers
 #
-# This file is part of  HyperSpy.
+# This file is part of HyperSpy.
 #
-#  HyperSpy is free software: you can redistribute it and/or modify
+# HyperSpy is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-#  HyperSpy is distributed in the hope that it will be useful,
+# HyperSpy is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with  HyperSpy.  If not, see <http://www.gnu.org/licenses/>.
+# along with HyperSpy. If not, see <https://www.gnu.org/licenses/#GPL>.
 
 import math
-import sympy
-import numpy as np
 
-from hyperspy.component import _get_scaling_factor
 from hyperspy._components.expression import Expression
 from hyperspy._components.gaussian import _estimate_gaussian_parameters
-from hyperspy.misc.utils import is_binned # remove in v2.0
-from distutils.version import LooseVersion
+from hyperspy.component import _get_scaling_factor
 
 sqrt2pi = math.sqrt(2 * math.pi)
 sigma2fwhm = 2 * math.sqrt(2 * math.log(2))
 
 
 class Voigt(Expression):
-
     r"""Voigt component.
 
     Symmetric peak shape based on the convolution of a Lorentzian and Normal
@@ -63,7 +58,7 @@ class Voigt(Expression):
 
 
     Parameters
-    -----------
+    ----------
     centre : float
         Location of the maximum of the peak.
     area : float
@@ -72,33 +67,36 @@ class Voigt(Expression):
         :math:`\gamma` = HWHM of the Lorentzian distribution.
     sigma: float
         :math:`2 \sigma \sqrt{(2 \log(2))}` = FWHM of the Gaussian distribution.
+    **kwargs
+        Extra keyword arguments are passed to the
+        :class:`~.api.model.components1D.Expression` component.
 
-
+    Notes
+    -----
     For convenience the `gwidth` and `lwidth` attributes can also be used to
     set and get the FWHM of the Gaussian and Lorentzian parts of the
     distribution, respectively. For backwards compatability, `FWHM` is another
     alias for the Gaussian width.
 
-    Notes
-    -----
     W.I.F. David, J. Appl. Cryst. (1986). 19, 63-64,
     doi:10.1107/S0021889886089999
     """
 
-    def __init__(self, centre=10., area=1., gamma=0.2, sigma=0.1,
-                 module=["numpy", "scipy"], **kwargs):
-        # Not to break scripts once we remove the legacy Voigt
-        if "legacy" in kwargs:
-            del kwargs["legacy"]
-        if LooseVersion(sympy.__version__) < LooseVersion("1.3"):
-            raise ImportError("The `Voigt` component requires "
-                              "SymPy >= 1.3")
-        # We use `_gamma` internally to workaround the use of the `gamma`
+    def __init__(
+        self,
+        centre=10.0,
+        area=1.0,
+        gamma=0.2,
+        sigma=0.1,
+        module=["numpy", "scipy"],
+        **kwargs,
+    ):
+        # We use `gamma_` internally to workaround the use of the `gamma`
         # function in sympy
         super().__init__(
-            expression="area * real(V); \
+            expression="area * re(V); \
                 V = wofz(z) / (sqrt(2.0 * pi) * sigma); \
-                z = (x - centre + 1j * _gamma) / (sigma * sqrt(2.0))",
+                z = (x - centre + 1j * gamma_) / (sigma * sqrt(2.0))",
             name="Voigt",
             centre=centre,
             area=area,
@@ -106,15 +104,16 @@ class Voigt(Expression):
             sigma=sigma,
             position="centre",
             module=module,
+            compute_gradients=False,
             autodoc=False,
-            rename_pars={"_gamma": "gamma"},
+            rename_pars={"gamma_": "gamma"},
             **kwargs,
         )
 
         # Boundaries
-        self.area.bmin = 0.
-        self.gamma.bmin = 0.
-        self.sigma.bmin = 0.
+        self.area.bmin = 0.0
+        self.gamma.bmin = 0.0
+        self.sigma.bmin = 0.0
 
         self.isbackground = False
         self.convolved = True
@@ -125,30 +124,29 @@ class Voigt(Expression):
 
         Parameters
         ----------
-        signal : Signal1D instance
+        signal : :class:`~.api.signals.Signal1D`
         x1 : float
             Defines the left limit of the spectral range to use for the
             estimation.
         x2 : float
             Defines the right limit of the spectral range to use for the
             estimation.
-
         only_current : bool
             If False estimates the parameters for the full dataset.
 
         Returns
         -------
-         : bool
-            Exit status required for the :meth:`remove_background` function.
+        bool
+            Exit status required for the :meth:`~.api.signals.Signal1D.remove_background` function.
 
         Notes
         -----
-        Adapted from http://www.scipy.org/Cookbook/FittingData
+        Adapted from https://scipy-cookbook.readthedocs.io/items/FittingData.html
 
         Examples
         --------
 
-        >>> g = hs.model.components1D.Voigt(legacy=False)
+        >>> g = hs.model.components1D.Voigt()
         >>> x = np.arange(-10, 10, 0.01)
         >>> data = np.zeros((32, 32, 2000))
         >>> data[:] = g.function(x).reshape((1, 1, 2000))
@@ -156,36 +154,34 @@ class Voigt(Expression):
         >>> s.axes_manager[-1].offset = -10
         >>> s.axes_manager[-1].scale = 0.01
         >>> g.estimate_parameters(s, -10, 10, False)
+        True
 
         """
         super()._estimate_parameters(signal)
         axis = signal.axes_manager.signal_axes[0]
-        centre, height, sigma = _estimate_gaussian_parameters(signal, x1, x2,
-                                                              only_current)
+        centre, height, sigma = _estimate_gaussian_parameters(
+            signal, x1, x2, only_current
+        )
         scaling_factor = _get_scaling_factor(signal, axis, centre)
 
         if only_current is True:
             self.centre.value = centre
             self.sigma.value = sigma
             self.area.value = height * sigma * sqrt2pi
-            if is_binned(signal):
-            # in v2 replace by
-            #if axis.is_binned:
+            if axis.is_binned:
                 self.area.value /= scaling_factor
             return True
         else:
             if self.area.map is None:
                 self._create_arrays()
-            self.area.map['values'][:] = height * sigma * sqrt2pi
-            if is_binned(signal):
-            # in v2 replace by
-            #if axis.is_binned:
-                self.area.map['values'][:] /= scaling_factor
-            self.area.map['is_set'][:] = True
-            self.sigma.map['values'][:] = sigma
-            self.sigma.map['is_set'][:] = True
-            self.centre.map['values'][:] = centre
-            self.centre.map['is_set'][:] = True
+            self.area.map["values"][:] = height * sigma * sqrt2pi
+            if axis.is_binned:
+                self.area.map["values"][:] /= scaling_factor
+            self.area.map["is_set"][:] = True
+            self.sigma.map["values"][:] = sigma
+            self.sigma.map["is_set"][:] = True
+            self.centre.map["values"][:] = centre
+            self.centre.map["is_set"][:] = True
             self.fetch_stored_values()
             return True
 
